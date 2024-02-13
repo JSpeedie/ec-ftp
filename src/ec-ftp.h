@@ -1,0 +1,2 @@
+#define KEEP_TEMP_ENC_FILES 1
+#define KEEP_TEMP_COMP_FILES 1
