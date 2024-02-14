@@ -33,8 +33,6 @@ struct pec_header {
 
 int read_bytes(void * ret, size_t num_bytes, FILE * f);
 
-unsigned char * read_chunk_of_file(FILE * f, uint64_t * ret_len);
-
 void clear_file(char * file);
 
 char * compression_name(char * filename);

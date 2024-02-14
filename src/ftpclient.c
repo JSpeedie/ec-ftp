@@ -15,9 +15,6 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#include "comp.h"
-#include "enc.h"
-#include "ftputil.h"
 #include "ec-ftp.h"
 
 
@@ -211,39 +208,6 @@ int get_filename(char *input, char *fileptr){
         return 1;
     }
 }
-
-
-/* CSCD58 Addition - Encryption */
-int do_dh_client(int controlfd, int datafd, uint32_t key[4]) {
-	uint64_t dh_p = 1;
-	dh_p = (dh_p << 32) - 99;
-	uint64_t dh_g = 5;
-	uint64_t dh_a, dh_ka, dh_kb, dh_k;
-	// TODO: are readfds ever used properly in this function? we call select on
-	// them, but no fd other than datafd is ever accessed and I don't think we
-	// do anything with the fd_set readfds (i.e. we never check if any of the
-	// fds in the set are set and never do anything particular to a given fd in
-	// the set)
-	fd_set readfds;
-	FD_ZERO(&readfds);
-
-	for (int i = 0; i < 4; i++) {
-		dh_a = (rand() % (dh_p - 2)) + 2;
-		dh_ka = sq_mp(dh_g, dh_a, dh_p);
-		FD_SET(datafd, &readfds);
-
-		write(datafd, (char *)&dh_ka, sizeof(dh_ka));
-
-		select(datafd + 1, &readfds, NULL, NULL, NULL);
-		read(datafd, (char *)&dh_kb, sizeof(dh_kb));
-
-		dh_k = sq_mp(dh_kb, dh_a, dh_p);
-		key[i] = dh_k & 0xffffffff;
-	}
-
-	return 0;
-}
-/* End CSCD58 Addition - Encryption */
 
 
 /** Perform the necessary operations to enact the QUIT FTP service command.

@@ -17,9 +17,6 @@
 #include <time.h>
 #include <unistd.h>
 
-#include "comp.h"
-#include "enc.h"
-#include "ftputil.h"
 #include "ec-ftp.h"
 
 
@@ -121,40 +118,6 @@ int get_command(char *command) {
 
     return value;
 }
-
-
-
-/* CSCD58 addition - Encryption + Parallelization */
-int do_dh_server(int controlfd, int datafd, uint32_t key[4]) {
-	uint64_t dh_p = 1;
-	dh_p = (dh_p << 32) - 99;
-	uint64_t dh_g = 5;
-	uint64_t dh_b, dh_ka, dh_kb, dh_k;
-	// TODO: are readfds ever used properly in this function? we call select on
-	// them, but no fd other than datafd is ever accessed and I don't think we
-	// do anything with the fd_set readfds (i.e. we never check if any of the
-	// fds in the set are set and never do anything particular to a given fd in
-	// the set)
-	fd_set readfds;
-	FD_ZERO(&readfds);
-
-	for (int i = 0; i < 4; i++) {
-		dh_b = (rand() % (dh_p - 2)) + 2;
-		dh_kb = sq_mp(dh_g, dh_b, dh_p);
-		FD_SET(datafd, &readfds);
-
-		select(datafd + 1, &readfds, NULL, NULL, NULL);
-		read(datafd, (char *)&dh_ka, sizeof(dh_ka));
-
-		write(datafd, (char *)&dh_kb, sizeof(dh_kb));
-
-		dh_k = sq_mp(dh_ka, dh_b, dh_p);
-		key[i] = dh_k & 0xffffffff;
-	}
-	
-	return 0;
-}
-/* CSCD58 end of addition - Encryption + Parallelization */
 
 
 int do_list(int controlfd, int datafd, char *input){

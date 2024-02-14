@@ -88,36 +88,6 @@ int write_pec_header(struct pec_header * pecheader, FILE * f) {
 }
 
 
-/** Takes an open file and a pointer to a uint64_t, and attempts to read a
- * chunk of the file, returning a pointer to a malloc'd array of characters
- * representing the contents of the chunk read, and modifying '*ret_len' to
- * contain the length of the returned array. The returned character array
- * must be freed by the caller of this function.
- *
- * \param '*f' an open file from which a chunk read will be attempted.
- * \param '*ret_len' a pointer to a uint64_t which will be modified to contain
- *     the length of the returned character array.
- * \return a pointer to an array of characters of '(*ret_len)' length on
- *     success, or NULL upon failure.
- *
- */
-unsigned char * read_chunk_of_file(FILE * f, uint64_t * ret_len) {
-	/* {{{ */
-	unsigned char * ret;
-	if ( (ret = malloc(MAX_CHUNK)) == NULL) {
-		fprintf(stderr, "ERROR: read_chunk_of_file(): could not allocate buffer for file\n");
-		return NULL;
-	}
-
-	size_t nmem_read = fread(&ret[0], 1, MAX_CHUNK, f);
-
-	*ret_len = nmem_read;
-
-	return ret;
-	/* }}} */
-}
-
-
 /** Writes nothing to a file, clearing it.
  *
  * \param '*file' the file path for the file to be wiped
