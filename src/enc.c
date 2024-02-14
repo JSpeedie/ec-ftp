@@ -20,10 +20,7 @@
  */
 char * temp_encryption_name(char * filename) {
 	/* {{{ */
-	// TODO: get this working with the ".enc" definition in the header
-	char * e_ext = ".enc";
-	/* char * e_ext = ENC_EXT; */
-	int e_ext_len = strlen(e_ext);
+	int e_ext_len = strlen(ENC_EXT);
 
 	/* GTNE: Generate a temp name for our encrypted file */
 	/* GTNE1: Calculate how much space we need for the file name for the
@@ -35,7 +32,7 @@ char * temp_encryption_name(char * filename) {
 	 * the suffix characters 'mkstemp()' requires and will modify */
 	// TODO: can this construction not be done faster or more efficiently?
 	strncpy(&e_out_fp[0], filename, strlen(filename));
-	strncat(&e_out_fp[0], e_ext, e_ext_len + 1);
+	strncat(&e_out_fp[0], ENC_EXT, e_ext_len + 1);
 	strncat(&e_out_fp[0], "-XXXXXX", 8);
 
 	/* GTNE3: Generate a temp name for our encrypted file with 'mkstemp()' */

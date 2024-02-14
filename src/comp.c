@@ -100,7 +100,6 @@ void clear_file(char * file) {
 		perror("fopen (clear_file)");
 		return;
 	}
-	fprintf(victim, "");
 	fclose(victim);
 
 	return;
@@ -118,10 +117,7 @@ void clear_file(char * file) {
  */
 char * compression_name(char * filename) {
 	/* {{{ */
-	// TODO: get this working with the ".enc" definition in the header
-	char * c_ext = ".comp";
-	/* char * c_ext = COMP_EXT; */
-	int c_ext_len = strlen(c_ext);
+	int c_ext_len = strlen(COMP_EXT);
 
 	/* GTNC: Generate the name for our compressed file */
 	/* GTNC1: Calculate how much space we need for the file name for the
@@ -131,7 +127,7 @@ char * compression_name(char * filename) {
 	/* GTNC2: Fill the string with the filename + the compression extension */
 	// TODO: can this construction not be done faster or more efficiently?
 	strncpy(&c_out_fp[0], filename, strlen(filename));
-	strncat(&c_out_fp[0], c_ext, c_ext_len + 1);
+	strncat(&c_out_fp[0], COMP_EXT, c_ext_len + 1);
 
 	return c_out_fp;
 	/* }}} */
@@ -148,10 +144,7 @@ char * compression_name(char * filename) {
  */
 char * temp_compression_name(char * filename) {
 	/* {{{ */
-	// TODO: get this working with the ".enc" definition in the header
-	char * c_ext = ".comp";
-	/* char * c_ext = COMP_EXT; */
-	int c_ext_len = strlen(c_ext);
+	int c_ext_len = strlen(COMP_EXT);
 
 	/* GTNC: Generate a temp name for our compressed file */
 	/* GTNC1: Calculate how much space we need for the file name for the
@@ -163,7 +156,7 @@ char * temp_compression_name(char * filename) {
 	 * the suffix characters 'mkstemp()' requires and will modify */
 	// TODO: can this construction not be done faster or more efficiently?
 	strncpy(&c_out_fp[0], filename, strlen(filename));
-	strncat(&c_out_fp[0], c_ext, c_ext_len + 1);
+	strncat(&c_out_fp[0], COMP_EXT, c_ext_len + 1);
 	strncat(&c_out_fp[0], "-XXXXXX", 8);
 
 	/* GTNC3: Generate a temp name for our compressed file with 'mkstemp()' */

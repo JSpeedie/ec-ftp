@@ -13,8 +13,6 @@
 #define CMD_GET 2
 #define CMD_PUT 3
 #define CMD_QUIT 4
-#define ENC_EXT ".enc"
-#define COMP_EXT ".comp"
 
 // TODO: Is the "do while" necessary here? Why not just have the for loop on its own?
 // TODO: is there a way to not have to pass 'i' here and to simply instantiate/define 'i' in the macro?

@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#define COMP_EXT ".comp"
 /* How many bytes each thread is allowed to read into memory
  * A Gibibyte (GiB) 1,073,741,824 / 4 (the number of threads) / 2 (since each thread has an inbuf and outbuf allocated)
  * = */

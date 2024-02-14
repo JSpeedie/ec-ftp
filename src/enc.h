@@ -1,6 +1,7 @@
 #ifndef ENC_HEADER
 #define ENC_HEADER
 
+#define ENC_EXT ".enc"
 #define MAXLINEENC 4096
 
 char * temp_encryption_name(char * filename);
