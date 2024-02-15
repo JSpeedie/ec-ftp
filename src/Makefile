@@ -1,8 +1,8 @@
 #Makefile
 LIBS = -lpthread
 CFLAGS = -Wall
-# CC = gcc -g
-CC = gcc
+CC = gcc -g
+# CC = gcc
 
 # For more information on 'patsubst' and the possibly-difficult-to-understand
 # code going on in the array creation code below, please see the GNU Make
@@ -44,6 +44,10 @@ DEPC = comp.c enc.c aes.c ec-ftp.c
 # }}}
 DEP = $(patsubst %.c,$(OBJDIR)/%.o,$(DEPC))
 
+# ==================================================
+# Big-picture rules
+# ==================================================
+
 # .DEFAULT_GOAL := compile
 
 # `compile` first because we want `make` to just compile the program, and the
@@ -65,6 +69,50 @@ lzma: $(LZMAOBJ)
 .PHONY: csshareddep
 csshareddep: $(DEP)
 
+# ==================================================
+# Object file rules
+# ==================================================
+
+# Create compression object file
+$(OBJDIR)/comp.o: comp.c comp.h
+	$(CC) $(CFLAGS) $< -c -o $@
+
+# Create encryption object file
+$(OBJDIR)/enc.o: enc.c enc.h
+	$(CC) $(CFLAGS) $< -c -o $@
+
+# Create server object file
+$(OBJDIR)/ftpserver.o: ftpserver.c ec-ftp.h
+	$(CC) $(CFLAGS) $< -c -o $@
+
+# Create client object file
+$(OBJDIR)/ftpclient.o: ftpclient.c ec-ftp.h
+	$(CC) $(CFLAGS) $< -c -o $@
+
+# Override the implicit rule for generating an object file for a given C file
+# for the C files in the LZMA directory so that the object files are generated
+# not in the same directory, but in an object subdirectory
+# {{{
+# For more info on the strange variables used here, please see:
+# (https://www.gnu.org/software/make/manual/html_node/Automatic-Variables.html)
+# }}}
+$(LZMADIR)/$(OBJDIR)/%.o: $(LZMADIR)/%.c
+	$(CC) $(CFLAGS) $< -c -o $@
+
+# Override the implicit rule for generating an object file for a given C file
+# for the C files in the source directory so that the object files are generated
+# not in the same directory, but in an object subdirectory
+# {{{
+# For more info on the strange variables used here, please see:
+# (https://www.gnu.org/software/make/manual/html_node/Automatic-Variables.html)
+# }}}
+$(OBJDIR)/%.o: %.c
+	$(CC) $(CFLAGS) $< -c -o $@
+
+# ==================================================
+# Executable rules
+# ==================================================
+
 # Link the various files to create the server executable
 ftpserver: lzma $(OBJDIR)/ftpserver.o $(DEP) | bin
 	$(CC) $(CFLAGS) $(OBJDIR)/ftpserver.o $(DEP) $(LZMAOBJ) $(LIBS) -o ftpserver
@@ -74,6 +122,10 @@ ftpserver: lzma $(OBJDIR)/ftpserver.o $(DEP) | bin
 ftpclient: lzma $(OBJDIR)/ftpclient.o $(DEP) | bin
 	$(CC) $(CFLAGS) $(OBJDIR)/ftpclient.o $(DEP) $(LZMAOBJ) $(LIBS) -o ftpclient
 	mv ftpclient ../bin/ftpclient/
+
+# ==================================================
+# Directory creation and cleaning rules
+# ==================================================
 
 .PHONY: obj
 obj:
@@ -109,23 +161,3 @@ cleanexec:
 
 .PHONY: clean
 clean: cleanlzma cleanobj cleanexec
-
-# Override the implicit rule for generating an object file for a given C file
-# for the C files in the LZMA directory so that the object files are generated
-# not in the same directory, but in an object subdirectory
-# {{{
-# For more info on the strange variables used here, please see:
-# (https://www.gnu.org/software/make/manual/html_node/Automatic-Variables.html)
-# }}}
-$(LZMADIR)/$(OBJDIR)/%.o: $(LZMADIR)/%.c
-	$(CC) $(CFLAGS) $< -c -o $@
-
-# Override the implicit rule for generating an object file for a given C file
-# for the C files in the source directory so that the object files are generated
-# not in the same directory, but in an object subdirectory
-# {{{
-# For more info on the strange variables used here, please see:
-# (https://www.gnu.org/software/make/manual/html_node/Automatic-Variables.html)
-# }}}
-$(OBJDIR)/%.o: %.c
-	$(CC) $(CFLAGS) $< -c -o $@
