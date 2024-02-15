@@ -69,25 +69,29 @@ lzma: $(LZMAOBJ)
 .PHONY: csshareddep
 csshareddep: $(DEP)
 
+.PHONY: debug
+debug: DEBUG = -DDEBUG_LEVEL=2
+debug: compile
+
 # ==================================================
 # Object file rules
 # ==================================================
 
 # Create compression object file
 $(OBJDIR)/comp.o: comp.c comp.h
-	$(CC) $(CFLAGS) $< -c -o $@
+	$(CC) $(CFLAGS) $(DEBUG) $< -c -o $@
 
 # Create encryption object file
 $(OBJDIR)/enc.o: enc.c enc.h
-	$(CC) $(CFLAGS) $< -c -o $@
+	$(CC) $(CFLAGS) $(DEBUG) $< -c -o $@
 
 # Create server object file
 $(OBJDIR)/ftpserver.o: ftpserver.c ec-ftp.h
-	$(CC) $(CFLAGS) $< -c -o $@
+	$(CC) $(CFLAGS) $(DEBUG) $< -c -o $@
 
 # Create client object file
 $(OBJDIR)/ftpclient.o: ftpclient.c ec-ftp.h
-	$(CC) $(CFLAGS) $< -c -o $@
+	$(CC) $(CFLAGS) $(DEBUG) $< -c -o $@
 
 # Override the implicit rule for generating an object file for a given C file
 # for the C files in the LZMA directory so that the object files are generated
@@ -107,7 +111,7 @@ $(LZMADIR)/$(OBJDIR)/%.o: $(LZMADIR)/%.c
 # (https://www.gnu.org/software/make/manual/html_node/Automatic-Variables.html)
 # }}}
 $(OBJDIR)/%.o: %.c
-	$(CC) $(CFLAGS) $< -c -o $@
+	$(CC) $(CFLAGS) $(DEBUG) $< -c -o $@
 
 # ==================================================
 # Executable rules
