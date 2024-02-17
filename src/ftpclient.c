@@ -247,9 +247,9 @@ int do_ls(int controlfd, int datafd, char *input){
     int maxfdp1, data_finished = FALSE, control_finished = FALSE;
 
     if(get_filename(input, filelist) < 0){
-		if (DEBUG_OUTPUT == 1) {
-        	fprintf(stdout, "No input filelist detected...\n");
-		}
+#if DEBUG_LEVEL >= 1
+	fprintf(stdout, "No input filelist detected...\n");
+#endif
         sprintf(str, "LIST");
     }else{
         sprintf(str, "LIST %s", filelist);
@@ -290,9 +290,9 @@ int do_ls(int controlfd, int datafd, char *input){
         }
 
         if(FD_ISSET(datafd, &rdset)){
-			if (DEBUG_OUTPUT == 1) {
-				fprintf(stdout, "Server Data Response:\n");
-			}
+#if DEBUG_LEVEL >= 1
+	fprintf(stdout, "Server Data Response:\n");
+#endif
             while(read(datafd, recvline, MAXLINE) > 0){
                 printf("%s", recvline);
                 bzero(recvline, (int)sizeof(recvline));
@@ -515,6 +515,7 @@ int do_get(int controlfd, int *datafds, char *input) {
 
     }
 	fclose(fp);
+	printf("File received\n"); // TODO: remove
     /* End CSCD58 Addition - Parallelization */
 
 	/* If there was an error receiving the file, delete the temp file it was to
@@ -725,6 +726,8 @@ int main(int argc, char **argv) {
 	struct sockaddr_in serv_addr, data_addr;
 	char command[1024], ip[INET_ADDRSTRLEN], port_command[MAXLINE+1];
 
+
+
 	if (argc != 3) {
 		printf("Invalid Number of Arguments...\n");
 		printf("Usage: ./ftpclient <server-ip> <server-listen-port>\n");
@@ -774,9 +777,9 @@ int main(int argc, char **argv) {
 			break;
 		}
 
-		if (DEBUG_OUTPUT == 1) {
-			fprintf(stdout, "command: %s\n", command);
-		}
+#if DEBUG_LEVEL >= 1
+	fprintf(stdout, "command: %s\n", command);
+#endif
 
 		/* Send the port command that was constructed earlier */
 		write(controlfd, port_command, strlen(port_command));
@@ -789,9 +792,9 @@ int main(int argc, char **argv) {
         }
         /* End CSCD58 Addition - Parallelization */
 
-		if (DEBUG_OUTPUT == 1) {
-			fprintf(stdout, "Data connection established. Ready to receive data!\n");
-		}
+#if DEBUG_LEVEL >= 1
+	fprintf(stdout, "Data connection established. Ready to receive data!\n");
+#endif
 
 		if (cmd == CMD_LS) {
 			if (do_ls(controlfd, datafds[0], command) < 0) {

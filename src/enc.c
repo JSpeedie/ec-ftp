@@ -114,13 +114,13 @@ int enc_file(char in_name[], char out_name[], uint32_t key[4]) {
     if ((in = fopen(in_name, "rb")) == NULL) {
         return -1;
     }
-    
+
     if((fp = fopen(out_name, "w")) == NULL){
         return -1;
     }
-    
+
     expkey(rkeys, key, sbox);
-    
+
     while (0 != (read_len = fread(readbuf, 1, READSIZE, in)) ) {
         for (i = 0; i < read_len - (read_len % 16); i += 16) {
             memcpy(text, &(readbuf[i]), 16);
@@ -128,17 +128,17 @@ int enc_file(char in_name[], char out_name[], uint32_t key[4]) {
             encrypt(text, rkeys, sbox);
             memcpy(&(writebuf[i]), text, 16);
         }
-        
+
         if (read_len < READSIZE) {
             if (read_len % 16 != 0) {
                 memcpy(text, &(readbuf[i]), (read_len % 16));
-                
+
                 int padnum = 16 - (read_len % 16);
                 for (int j = (read_len % 16); j < 16; j++) {
                     text[j] = padnum;
                     read_len++;
                 }
-                
+
                 padded = 1;
                 to_column_order(text);
                 encrypt(text, rkeys, sbox);

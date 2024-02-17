@@ -98,10 +98,10 @@ that end in `.comp` (which hopefully you will never see since they are meant to
 be temporary) - takes the form of repeated blocks, each having the structure:
 
 ```
-[PEC header 1][processed data 1]...[PEC header n][processed data n]
+[EC header 1][processed data 1]...[EC header n][processed data n]
 ```
 
-Where the structure of a PEC header is:
+Where the structure of a EC header is:
 
 ```
 1 byte for a (signed) char representing whether the data in the data chunk is raw and unchanged (=0) or LZMA compressed (=1).
@@ -111,7 +111,7 @@ sizeof(size_t) bytes for a size_t representing the length (in bytes) of the data
 
 and the structure of the processed data is:
 ```
-x bytes of data (specified by the second size_t in the PEC header) that may or may not require uncompressing.
+x bytes of data (specified by the second size_t in the EC header) that may or may not require uncompressing.
 ```
 
 This was necessary for 2 reasons. First, the compression algorithm does not

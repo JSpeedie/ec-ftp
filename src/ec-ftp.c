@@ -6,10 +6,40 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#if DEBUG_LEVEL >= 2
+#include <time.h>
+#endif
 
 #include "comp.h"
 #include "enc.h"
 #include "ec-ftp.h"
+
+
+#if DEBUG_LEVEL >= 2
+void timespecsubtract(struct timespec *a, struct timespec *b, struct timespec *c) {
+	c->tv_sec = a->tv_sec - b->tv_sec;
+	c->tv_nsec = a->tv_nsec - b->tv_nsec;
+	if (c->tv_nsec < 0) {
+		c->tv_nsec = 1000000000 + c->tv_nsec;
+		c->tv_sec -= 1;
+ 	}
+}
+
+
+/* '*s' should point to at least (20 + 1 + num_dec + 1 = 31) free bytes */
+void timespecstr(struct timespec *t, char *s, unsigned int num_dec) {
+	if (num_dec >= 1) {
+		/* tv_nsec has a max value of 999,999,999, so we allocate for printing that
+		* value in base 10 + the null term */
+		char decimals[10];
+		sprintf(decimals, "%09ld", t->tv_nsec);
+		decimals[num_dec] = '\0';
+		sprintf(s, "%ld.%s", t->tv_sec, decimals);
+	} else {
+		sprintf(s, "%ld", t->tv_sec);
+	}
+}
+#endif
 
 
 /** Takes a string and modifies it such that there is no leading or trailing
@@ -137,12 +167,27 @@ int prepare_file(char * filename, uint32_t key[4], char ** ret_prepared_fp) {
 		return -1;
 	}
 
+#if DEBUG_LEVEL >= 2
+	struct timespec ts_start;
+	struct timespec ts_end;
+	struct timespec ts_elapsed;
+	char timestring[31];
+
+	clock_gettime(CLOCK_MONOTONIC, &ts_start);
+#endif
 	/* Compress content of file at 'filename' writing output to file at
 	 * 'c_out_fp' */
 	if (0 != comp_file(filename, c_out_fp)) {
 		fprintf(stderr, "ERROR: could not compress file!\n");
 		return -1;
 	}
+#if DEBUG_LEVEL >= 2
+	clock_gettime(CLOCK_MONOTONIC, &ts_end);
+	timespecsubtract(&ts_end, &ts_start, &ts_elapsed);
+	timespecstr(&ts_elapsed, &timestring[0], 2);
+	fprintf(stderr, "(%d) STATUS: preparing file: compression took %s seconds\n", \
+		getpid(), &timestring[0]);
+#endif
 
 	/* Get the "pure" name for the compressed version of the file, i.e.,
 	 * the temp compression file name minus the 'mkstemp()' digits */
@@ -158,17 +203,27 @@ int prepare_file(char * filename, uint32_t key[4], char ** ret_prepared_fp) {
 
 	free(c_out_fp_pure);
 
+#if DEBUG_LEVEL >= 2
+	clock_gettime(CLOCK_MONOTONIC, &ts_start);
+#endif
 	/* Encrypt content of file at 'filename' writing output to file at
 	 * 'e_out_fp' */
 	if (0 != enc_file(c_out_fp, e_out_fp, key)) {
 		fprintf(stderr, "ERROR: could not encrypt file!\n");
 		return -1;
 	}
+#if DEBUG_LEVEL >= 2
+	clock_gettime(CLOCK_MONOTONIC, &ts_end);
+	timespecsubtract(&ts_end, &ts_start, &ts_elapsed);
+	timespecstr(&ts_elapsed, &timestring[0], 2);
+	fprintf(stderr, "(%d) STATUS: preparing file: encryption took %s seconds\n", \
+		getpid(), &timestring[0]);
+#endif
 
 	if (KEEP_TEMP_COMP_FILES != 1) {
 		if (0 != remove(c_out_fp)) {
 			fprintf(stderr, "WARNING: could not remove temporary compressed .comp file!\n");
-		} 
+		}
 	}
 
 	free(c_out_fp);
@@ -200,12 +255,27 @@ int process_received_file(char * filename, char * recv_fp, uint32_t key[4]) {
 		return -1;
 	}
 
+#if DEBUG_LEVEL >= 2
+	struct timespec ts_start;
+	struct timespec ts_end;
+	struct timespec ts_elapsed;
+	char timestring[31];
+
+	clock_gettime(CLOCK_MONOTONIC, &ts_start);
+#endif
 	/* Decrypt content of file at 'recv_fp' writing output to file at
 	 * 'dec_out_fp' */
 	if (0 != dec_file(recv_fp, dec_out_fp, key)) {
 		fprintf(stderr, "ERROR: could not decrypt file!\n");
 		return -1;
 	}
+#if DEBUG_LEVEL >= 2
+	clock_gettime(CLOCK_MONOTONIC, &ts_end);
+	timespecsubtract(&ts_end, &ts_start, &ts_elapsed);
+	timespecstr(&ts_elapsed, &timestring[0], 2);
+	fprintf(stderr, "(%d) STATUS: preparing file: decryption took %s seconds\n", \
+		getpid(), &timestring[0]);
+#endif
 
 	if (KEEP_TEMP_ENC_FILES != 1) {
 		if (0 != remove(recv_fp)) {
@@ -213,12 +283,22 @@ int process_received_file(char * filename, char * recv_fp, uint32_t key[4]) {
 		}
 	}
 
+#if DEBUG_LEVEL >= 2
+	clock_gettime(CLOCK_MONOTONIC, &ts_start);
+#endif
 	/* Uncompress content of file at 'dec_out_fp' writing output to file at
 	 * 'filename' */
 	if (0 != uncomp_file(dec_out_fp, filename)) {
 		fprintf(stderr, "ERROR: could not uncompress file!\n");
 		return -1;
 	}
+#if DEBUG_LEVEL >= 2
+	clock_gettime(CLOCK_MONOTONIC, &ts_end);
+	timespecsubtract(&ts_end, &ts_start, &ts_elapsed);
+	timespecstr(&ts_elapsed, &timestring[0], 2);
+	fprintf(stderr, "(%d) STATUS: preparing file: uncompression took %s seconds\n", \
+		getpid(), &timestring[0]);
+#endif
 
 	if (KEEP_TEMP_COMP_FILES != 1) {
 		if (0 != remove(dec_out_fp)) {

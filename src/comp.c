@@ -7,6 +7,9 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
+#if DEBUG_LEVEL >= 2
+#include <sys/syscall.h>
+#endif
 
 #include "lzma/LzmaLib.h"
 #include "comp.h"
@@ -37,24 +40,24 @@ int read_bytes(void * ret, size_t num_bytes, FILE * f) {
 }
 
 
-/** Takes pointer to a struct pec_header and an open file stream, and reads
- * the PEC values from the stream into the struct.
+/** Takes pointer to a struct ec_header and an open file stream, and reads
+ * the EC values from the stream into the struct.
  *
- * \param '*pecheader' a pointer to a struct pec_header which will be modified
- *     to contain to the PEC header values represented by the next few bytes in
+ * \param '*echeader' a pointer to a struct ec_header which will be modified
+ *     to contain to the EC header values represented by the next few bytes in
  *     the file.
  * \param '*f' an open file stream from which this function will read.
  * \return 0 upon success, a negative int on failure.
  */
-int read_pec_header(struct pec_header * pecheader, FILE * f) {
+int read_ec_header(struct ec_header * echeader, FILE * f) {
 	/* {{{ */
-	if (1 != fread(&pecheader->compressed, sizeof(char), 1, f)) {
+	if (1 != fread(&echeader->compressed, sizeof(char), 1, f)) {
 		return -1;
 	}
-	if (1 != fread(&pecheader->orig_size, sizeof(size_t), 1, f)) {
+	if (1 != fread(&echeader->orig_size, sizeof(size_t), 1, f)) {
 		return -2;
 	}
-	if (1 != fread(&pecheader->proc_size, sizeof(size_t), 1, f)) {
+	if (1 != fread(&echeader->proc_size, sizeof(size_t), 1, f)) {
 		return -3;
 	}
 
@@ -63,23 +66,23 @@ int read_pec_header(struct pec_header * pecheader, FILE * f) {
 }
 
 
-/** Takes pointer to a struct pec_header and an open file stream, and writes
- * the PEC values from the struct to the stream.
+/** Takes pointer to a struct ec_header and an open file stream, and writes
+ * the EC values from the struct to the stream.
  *
- * \param '*pecheader' a pointer to a struct pec_header which will have its
+ * \param '*echeader' a pointer to a struct ec_header which will have its
  *     header values written to the file.
  * \param '*f' an open file stream which this function will write to.
  * \return 0 upon success, a negative int on failure.
  */
-int write_pec_header(struct pec_header * pecheader, FILE * f) {
+int write_ec_header(struct ec_header * echeader, FILE * f) {
 	/* {{{ */
-	if (1 != fwrite(&pecheader->compressed, sizeof(char), 1, f)) {
+	if (1 != fwrite(&echeader->compressed, sizeof(char), 1, f)) {
 		return -1;
 	}
-	if (1 != fwrite(&pecheader->orig_size, sizeof(size_t), 1, f)) {
+	if (1 != fwrite(&echeader->orig_size, sizeof(size_t), 1, f)) {
 		return -2;
 	}
-	if (1 != fwrite(&pecheader->proc_size, sizeof(size_t), 1, f)) {
+	if (1 != fwrite(&echeader->proc_size, sizeof(size_t), 1, f)) {
 		return -3;
 	}
 
@@ -191,48 +194,61 @@ typedef struct comp_thread_args {
 	unsigned char * outbuf;
 	/* The number of bytes in the buffer for output (compressed) data */
 	size_t outbuf_len;
-	/* the PEC header */
-	struct pec_header pecheader;
+	/* the EC header */
+	struct ec_header echeader;
+	/* For returning a success/error code */
+	int return_val;
 }CompThreadArgs;
 
 
 /** Helper function for compressing a file through multiple threads */
 void *compress_chunk_of_file(void *arg) {
 	/* {{{ */
-	printf("running thread func\n");
+#if DEBUG_LEVEL >= 2
+	fprintf(stderr, "(%d) STATUS: compression: thread %ld starting...\n", \
+		getpid(), syscall(SYS_gettid));
+#endif
 	struct comp_thread_args *t = (struct comp_thread_args *) arg;
 
 	/* 1. Read the assigned number of bytes from the given (and already
 	 * positioned) file stream */
 	if (0 != read_bytes(&t->inbuf[0], t->ir_readlen, t->input_reader)) {
 		fprintf(stderr, "ERROR: thread couldn't read assigned number of bytes from given input file stream\n");
-		// TODO: some sort of error return code?
+		t->return_val = -1;
+		return NULL;
 	}
 
 	/* 2. Compress the data in 't->inbuf' and put in 't->outbuf' */
 	MY_STDAPI compret = LzmaCompress( \
 		&t->outbuf[0], &t->outbuf_len, &t->inbuf[0], t->ir_readlen, \
-		&t->props[0], &t->props_len, 5, 1 << 24, 3, 0, 2, 32, 1);
+		&t->props[0], &t->props_len, COMP_LEVEL, COMP_DICT_SIZE, 3, 0, 2, 32, 1);
 	if (compret != SZ_OK) {
 		fprintf(stderr, "ERROR: compression call failed!\n");
-		// TODO: some sort of error return code?
+		t->return_val = -1;
+		return NULL;
 	}
 
-	/* 3. Prepare the PEC header */
+	/* 3. Prepare the EC header */
 	/* If the compressed data (+ its props) takes up the same amount of space
 	 * or more than the input data */
 	if (t->props_len + t->outbuf_len >= t->ir_readlen) {
-		t->pecheader.compressed = PEC_UNCOMPRESSED;
+		t->echeader.compressed = EC_UNCOMPRESSED;
 		/* Store the size of stored data (uncompressed) */
-		memcpy(&t->pecheader.proc_size, &t->ir_readlen, sizeof(t->ir_readlen));
+		memcpy(&t->echeader.proc_size, &t->ir_readlen, sizeof(t->ir_readlen));
 	} else {
-		t->pecheader.compressed = PEC_COMPRESSED;
+		t->echeader.compressed = EC_COMPRESSED;
 		/* Store the size of stored data (compressed) */
-		memcpy(&t->pecheader.proc_size, &t->outbuf_len, sizeof(t->outbuf_len));
+		memcpy(&t->echeader.proc_size, &t->outbuf_len, sizeof(t->outbuf_len));
 	}
-	/* Store the size of the uncompressed data in the PEC header */
-	memcpy(&t->pecheader.orig_size, &t->ir_readlen, sizeof(t->ir_readlen));
+	/* Store the size of the uncompressed data in the EC header */
+	memcpy(&t->echeader.orig_size, &t->ir_readlen, sizeof(t->ir_readlen));
 
+#if DEBUG_LEVEL >= 2
+	fprintf(stderr, "(%d) STATUS: compression: thread %ld finished successfully\n", \
+		getpid(), syscall(SYS_gettid));
+#endif
+
+	t->return_val = 0;
 	return NULL;
 	/* }}} */
 }
@@ -241,33 +257,53 @@ void *compress_chunk_of_file(void *arg) {
 /** Helper function for uncompressing a file through multiple threads */
 void *uncompress_chunk_of_file(void *arg) {
 	/* {{{ */
-	printf("running thread func\n");
+#if DEBUG_LEVEL >= 2
+	fprintf(stderr, "(%d) STATUS: uncompression: thread %ld starting...\n", \
+		getpid(), syscall(SYS_gettid));
+#endif
 	struct comp_thread_args *t = (struct comp_thread_args *) arg;
 
-	/* 1. Read the processed data from file chunk */
+	/* 1. If this chunk has compressed data (and thus has its data preceded by
+	 * LZMA props), read the props first */
+	if (t->echeader.compressed == EC_COMPRESSED) {
+		if (0 != read_bytes(&t->props[0], t->props_len, t->input_reader)) {
+			fprintf(stderr, "ERROR: thread couldn't read assigned number of bytes from given input file stream\n");
+			t->return_val = -1;
+			return NULL;
+		}
+	}
+	/* 2. Read the processed data from file chunk */
 	if (0 != read_bytes(&t->inbuf[0], t->ir_readlen, t->input_reader)) {
 		fprintf(stderr, "ERROR: thread couldn't read assigned number of bytes from given input file stream\n");
-		// TODO: some sort of error return code?
+		t->return_val = -1;
+		return NULL;
 	}
 
-	/* 2. Setup 'outbuf' for printing (uncompress inbuf data, or redirect
+	/* 3. Setup 'outbuf' for printing (uncompress inbuf data, or redirect
 	 * 'outbuf' to 'inbuf') */
 	/* If the processed data is compressed */
-	if (t->pecheader.compressed == PEC_COMPRESSED) {
+	if (t->echeader.compressed == EC_COMPRESSED) {
 		/* Uncompress processed data in 't->inbuf' and put in 't->outbuf' */
 		MY_STDAPI uncompret = LzmaUncompress( \
 			&t->outbuf[0], &t->outbuf_len, &t->inbuf[0], &t->ir_readlen, \
 			&t->props[0], t->props_len);
 		if (uncompret != SZ_OK) {
 			fprintf(stderr, "ERROR: uncompression call failed!\n");
-			// TODO: some sort of error return code?
+			t->return_val = -1;
+			return NULL;
 		}
 	/* If the processed data is not compressed, simply redirect */
 	} else {
 		t->outbuf = t->inbuf;
-		t->outbuf_len = t->pecheader.orig_size;
+		t->outbuf_len = t->echeader.orig_size;
 	}
 
+#if DEBUG_LEVEL >= 2
+	fprintf(stderr, "(%d) STATUS: uncompression: thread %ld finished successfully\n", \
+		getpid(), syscall(SYS_gettid));
+#endif
+
+	t->return_val = 0;
 	return NULL;
 	/* }}} */
 }
@@ -287,19 +323,37 @@ int comp_file(char * inputfilepath, char * outputfilepath) {
 	stat(inputfilepath, &s);
 	long max_bytes_per_batch = COMP_THREAD_MAX_MEM * COMP_MAX_THREADS;
 
+#if DEBUG_LEVEL >= 1
+	/* Print warning if the file will require more than one thread */
+	if (s.st_size > COMP_THREAD_MAX_MEM) {
+		fprintf(stderr, "(%d) WARNING: compression: File size is bigger than " \
+			"the memory limit for one compression thread (%ld > %d bytes). " \
+			"The file will be compressed across multiple threads.\n", \
+			getpid(), s.st_size, COMP_THREAD_MAX_MEM);
+	}
+#endif
+
 	/* If the size of the file is too large for all its data to be loaded into
-	 * memory and compressed in one threaded batch */
+	 * memory and compressed in one batch of threads */
 	if (s.st_size > max_bytes_per_batch) {
-		fprintf(stderr, "WARNING: File size is bigger than the memory limit " \
-				"for one threaded compression batch (%ld > %ld bytes) and " \
-				"must instead be compressed incrementally.\n", \
-				s.st_size, max_bytes_per_batch);
+#if DEBUG_LEVEL >= 1
+	/* Print warning if the file will require more than one batch of threads */
+	fprintf(stderr, "(%d) WARNING: compression: File size is bigger than " \
+		"the memory limit for one threaded compression batch " \
+		"(%ld > %ld bytes). The file will be compressed over multiple " \
+		"multithreaded batches.\n", \
+		getpid(), s.st_size, max_bytes_per_batch);
+#endif
 		/* "Ceiled" division so that the number of jobs is always sufficient
 		 * to compress the whole file */
 		num_batches = (s.st_size / max_bytes_per_batch) + 1;
 	}
 
-	printf("num_batches = %d\n", num_batches);
+#if DEBUG_LEVEL >= 1
+	fprintf(stderr, "(%d) STATUS: compression: number of batches needed " \
+		"= %d\n", getpid(), num_batches);
+#endif
+
 
 	clear_file(outputfilepath);
 
@@ -335,7 +389,10 @@ int comp_file(char * inputfilepath, char * outputfilepath) {
 			num_threads = (batch_len / COMP_THREAD_MAX_MEM) + 1;
 		}
 
-		printf("num_threads in batch %d = %d\n", batch_index, num_threads);
+#if DEBUG_LEVEL >= 1
+	fprintf(stderr, "(%d) STATUS: compression: batch (%d/%d) has %d threads\n", \
+		getpid(), batch_index + 1, num_batches, num_threads);
+#endif
 
 		/* STA: Set Thread Arguments */
 
@@ -356,7 +413,8 @@ int comp_file(char * inputfilepath, char * outputfilepath) {
 			args[thread_index].props_len = LZMA_PROPS_SIZE;
 			args[thread_index].props = malloc(LZMA_PROPS_SIZE);
 			if (args[thread_index].props == NULL) {
-				fprintf(stderr, "ERROR: could not allocate props\n");
+				fprintf(stderr, "ERROR: could not allocate props "\
+					"(asked for %d bytes)\n", LZMA_PROPS_SIZE);
 				return -1;
 			}
 
@@ -373,21 +431,24 @@ int comp_file(char * inputfilepath, char * outputfilepath) {
 					- (thread_index * COMP_THREAD_MAX_MEM); // If this is the last thread, read only the remaining bytes of the file
 				args[thread_index].inbuf = malloc(args[thread_index].ir_readlen);
 				if (args[thread_index].inbuf == NULL) {
-					fprintf(stderr, "ERROR: could not allocate input buffer\n");
+					fprintf(stderr, "ERROR: could not allocate input buffer "\
+						"(asked for %ld bytes)\n", args[thread_index].ir_readlen);
 					return -1;
 				}
 				/* / 3 + 128 was some simple math recommended by LZMA SDK? */
 				args[thread_index].outbuf_len = args[thread_index].ir_readlen + args[thread_index].ir_readlen / 3 + 128;
 				args[thread_index].outbuf = malloc(args[thread_index].outbuf_len);
 				if (args[thread_index].outbuf == NULL) {
-					fprintf(stderr, "ERROR: could not allocate output buffer\n");
+					fprintf(stderr, "ERROR: could not allocate output buffer "\
+						"(asked for %ld bytes)\n", args[thread_index].outbuf_len);
 					return -1;
 				}
 			} else {
 				args[thread_index].ir_readlen = COMP_THREAD_MAX_MEM;
 				args[thread_index].inbuf = malloc(COMP_THREAD_MAX_MEM);
 				if (args[thread_index].inbuf == NULL) {
-					fprintf(stderr, "ERROR: could not allocate input buffer\n");
+					fprintf(stderr, "ERROR: could not allocate input buffer "\
+						"(asked for %d bytes)\n", COMP_THREAD_MAX_MEM);
 					return -1;
 				}
 				/* / 3 + 128 was some simple math recommended by LZMA SDK? */
@@ -395,7 +456,8 @@ int comp_file(char * inputfilepath, char * outputfilepath) {
 				args[thread_index].outbuf_len = max_outbuf_len;
 				args[thread_index].outbuf = malloc(max_outbuf_len);
 				if (args[thread_index].outbuf == NULL) {
-					fprintf(stderr, "ERROR: could not allocate output buffer\n");
+					fprintf(stderr, "ERROR: could not allocate output buffer "\
+						"(asked for %ld bytes)\n", max_outbuf_len);
 					return -1;
 				}
 			}
@@ -415,17 +477,25 @@ int comp_file(char * inputfilepath, char * outputfilepath) {
 		/* RT2: Have this "thread" compress as well since otherwise it would be
 		 * waiting idly */
 		compress_chunk_of_file(&args[num_threads - 1]);
+		if (args[num_threads - 1].return_val != 0) {
+			fprintf(stderr, "ERROR: thread failed to compress assigned chunk\n");
+			return -1;
+		}
 
 		/* RT3: Wait for all the threads to finish their compression */
 		for (int t = 0; t < num_threads - 1; t++) {
 			pthread_join(thread_id[t], NULL);
+			if (args[t].return_val != 0) {
+				fprintf(stderr, "ERROR: thread failed to compress assigned chunk\n");
+				return -1;
+			}
 		}
 
 		/* MUTW: Make use of the Threads' Work */
 		for (int t = 0; t < num_threads; t++) {
-			/* MUTW1: Write the PEC header of the current thread to the output file */
-			if (0 != write_pec_header(&args[t].pecheader, out_writer)) {
-				fprintf(stderr, "ERROR: Could not write PEC header to output file\n");
+			/* MUTW1: Write the EC header of the current thread to the output file */
+			if (0 != write_ec_header(&args[t].echeader, out_writer)) {
+				fprintf(stderr, "ERROR: Could not write EC header to output file\n");
 				return -1;
 			}
 
@@ -465,6 +535,12 @@ int comp_file(char * inputfilepath, char * outputfilepath) {
 
 	fclose(out_writer);
 
+#if DEBUG_LEVEL >= 1
+	fprintf(stderr, "(%d) STATUS: compression: \"%s\" has been compressed. " \
+		"The result is stored at \"%s\"\n", getpid(), inputfilepath, \
+		outputfilepath);
+#endif
+
 	return 0;
 	/* }}} */
 }
@@ -501,7 +577,33 @@ int uncomp_file(char * inputfilepath, char * outputfilepath) {
 	off_t cur_pos = 0;
 	char num_threads = COMP_MAX_THREADS;
 	CompThreadArgs args[num_threads];
-	int batch_index = 0;
+#if DEBUG_LEVEL >= 1
+	long max_bytes_per_batch = COMP_THREAD_MAX_MEM * COMP_MAX_THREADS;
+	short batch_index = 0;
+#endif
+
+#if DEBUG_LEVEL >= 1
+	/* Print warning if the file will require more than one thread */
+	if (s.st_size > COMP_THREAD_MAX_MEM) {
+		fprintf(stderr, "(%d) WARNING: uncompression: File size is bigger than " \
+			"the memory limit for one uncompression thread (%ld > %d bytes). " \
+			"The file will be uncompressed across multiple threads.\n", \
+			getpid(), s.st_size, COMP_THREAD_MAX_MEM);
+	}
+#endif
+
+#if DEBUG_LEVEL >= 1
+	/* If the size of the file is too large for all its data to be loaded into
+	 * memory and uncompressed in one batch of threads */
+	if (s.st_size > max_bytes_per_batch) {
+	/* Print warning if the file will require more than one batch of threads */
+	fprintf(stderr, "(%d) WARNING: uncompression: File size is bigger than " \
+		"the memory limit for one threaded uncompression batch " \
+		"(%ld > %ld bytes). The file will be uncompressed over multiple " \
+		"multithreaded batches.\n", \
+		getpid(), s.st_size, max_bytes_per_batch);
+	}
+#endif
 
 	/* Go through the input file in batches, breaking into threads for each
 	 * batch, each thread uncompressing an assigned part of the file before
@@ -510,8 +612,8 @@ int uncomp_file(char * inputfilepath, char * outputfilepath) {
 	 * that before a batch can break into threads, it must be determine how
 	 * many threads are needed. This is done by attempting to determine the
 	 * work for a set maximum number of threads, and upon reaching the EOF when
-	 * attempting to read a given PEC header, capping the number of threads.
-	 * The PEC headers specify all the work parameters for the threads.
+	 * attempting to read a given EC header, capping the number of threads.
+	 * The EC headers specify all the work parameters for the threads.
 	 * On a smaller scale, we can say this all takes place in 3 broad stages:
 	 * STA: Set Thread Arguments
 	 * RT: Run Threads
@@ -522,22 +624,22 @@ int uncomp_file(char * inputfilepath, char * outputfilepath) {
 
 		/* STA: Set Thread Arguments */
 		for (int thread_index = 0; thread_index < COMP_MAX_THREADS; thread_index++) {
-			/* STA1: Read PEC header for chunk */
-			if (0 != read_pec_header(&args[thread_index].pecheader, in_file)) {
+			/* STA1: Read EC header for chunk */
+			if (0 != read_ec_header(&args[thread_index].echeader, in_file)) {
 				/* If the read failed because the end of the file was reached... */
-				if (0 == feof(in_file)) {
+				if (0 != feof(in_file)) {
 					/* ... then we have already read the last chunk, and
 					 * we should start running the threads immediately */
 					num_threads = thread_index;
 					break;
 				} else {
-					fprintf(stderr, "ERROR: couldn't read PEC header from chunk\n");
+					fprintf(stderr, "ERROR: couldn't read EC header from chunk\n");
 					return -1;
 				}
 			}
 
-			bytes_left -= PEC_HEADER_SIZE;
-			cur_pos += PEC_HEADER_SIZE;
+			bytes_left -= EC_HEADER_SIZE;
+			cur_pos += EC_HEADER_SIZE;
 
 			/* STA2: Set up a reader for each thread such that it will read
 			 * at the part of the file it is responsible for reading */
@@ -553,41 +655,61 @@ int uncomp_file(char * inputfilepath, char * outputfilepath) {
 			args[thread_index].props_len = LZMA_PROPS_SIZE;
 			args[thread_index].props = malloc(LZMA_PROPS_SIZE);
 			if (args[thread_index].props == NULL) {
-				fprintf(stderr, "ERROR: could not allocate props\n");
+				fprintf(stderr, "ERROR: could not allocate props "\
+					"(asked for %d bytes)\n", LZMA_PROPS_SIZE);
 				return -1;
 			}
 			/* STA4: Set the read length and allocate space for the input buffer */
-			args[thread_index].ir_readlen = args[thread_index].pecheader.proc_size;
+			args[thread_index].ir_readlen = args[thread_index].echeader.proc_size;
 			args[thread_index].inbuf = malloc(args[thread_index].ir_readlen);
 			if (args[thread_index].inbuf == NULL) {
-				fprintf(stderr, "ERROR: could not allocate input buffer\n");
+				fprintf(stderr, "ERROR: could not allocate input buffer "\
+					"(asked for %ld bytes)\n", args[thread_index].ir_readlen);
 				return -1;
 			}
 			/* STA5: If the processed data is compressed, allocate room for
 			 * uncompressed data */
-			if (args[thread_index].pecheader.compressed == PEC_COMPRESSED) {
-				args[thread_index].outbuf_len = args[thread_index].pecheader.orig_size;
-				args[thread_index].outbuf = malloc(args[thread_index].pecheader.orig_size);
+			if (args[thread_index].echeader.compressed == EC_COMPRESSED) {
+				args[thread_index].outbuf_len = args[thread_index].echeader.orig_size;
+				args[thread_index].outbuf = malloc(args[thread_index].echeader.orig_size);
 				if (args[thread_index].outbuf == NULL) {
-					fprintf(stderr, "ERROR: could not allocate output buffer\n");
+					fprintf(stderr, "ERROR: could not allocate output buffer "\
+						"(asked for %ld bytes)\n", args[thread_index].echeader.orig_size);
 					return -1;
 				}
 			}
 
-			/* STA6: Now that we have set the arguments for the current thread,
-			 * move the file cursor to beginning of next (pec header +
-			 * processed data) chunk for the next thread */
-			if (0 != fseek(in_file, args[thread_index].pecheader.proc_size, SEEK_CUR)) {
-				perror("fseek (uncomp_file)");
-				return -1;
-
+			/* STA6: If the data for the current (ec header + processed data)
+			 * chunk is compressed, and the compressed data is therefore
+			 * preceded by LZMA props, then seeking to the next chunk
+			 * must take into account the props bytes */
+			size_t num_props_bytes = 0;
+			if (args[thread_index].echeader.compressed == EC_COMPRESSED) {
+				num_props_bytes = args[thread_index].props_len;
+				bytes_left -= args[thread_index].props_len;
+				cur_pos += args[thread_index].props_len;
 			}
 
-			bytes_left -= args[thread_index].pecheader.proc_size;
-			cur_pos += args[thread_index].pecheader.proc_size;
+			/* STA7: Now that we have set the arguments for the current thread,
+			 * move the file cursor to beginning of next (ec header +
+			 * processed data) chunk (i.e. seek to the next chunk) for the
+			 * setting the next thread's arguments */
+			if (0 != fseek(in_file, \
+				num_props_bytes + args[thread_index].echeader.proc_size, \
+				SEEK_CUR)) {
+
+				perror("fseek (uncomp_file)");
+				return -1;
+			}
+
+			bytes_left -= args[thread_index].echeader.proc_size;
+			cur_pos += args[thread_index].echeader.proc_size;
 		}
 
-		printf("num_threads in batch %d = %d\n", batch_index, num_threads);
+#if DEBUG_LEVEL >= 1
+	fprintf(stderr, "(%d) STATUS: uncompression: batch (%d/?) has " \
+		"%d threads\n", getpid(), batch_index + 1, num_threads);
+#endif
 
 		/* RT: Run Threads */
 		pthread_t thread_id[num_threads];
@@ -600,13 +722,21 @@ int uncomp_file(char * inputfilepath, char * outputfilepath) {
 				return -1;
 			}
 		}
-		/* RT2: Have this "thread" uncompress as well since otherwise it would be
-		 * waiting idly */
+		/* RT2: Have this "thread" uncompress as well since otherwise it would
+		 * be waiting idly */
 		uncompress_chunk_of_file(&args[num_threads - 1]);
+		if (args[num_threads - 1].return_val != 0) {
+			fprintf(stderr, "ERROR: thread failed to uncompress assigned chunk\n");
+			return -1;
+		}
 
 		/* RT3: Wait for all the threads to finish their compression */
 		for (int t = 0; t < num_threads - 1; t++) {
 			pthread_join(thread_id[t], NULL);
+			if (args[t].return_val != 0) {
+				fprintf(stderr, "ERROR: thread failed to uncompress assigned chunk\n");
+				return -1;
+			}
 		}
 
 		/* MUTW: Make use of the Threads' Work */
@@ -624,14 +754,16 @@ int uncomp_file(char * inputfilepath, char * outputfilepath) {
 			/* 'outbuf' is set to point to 'inbuf' if the data was not
 			 * compressed. To avoid double freeing 'inbuf', check that the data
 			 * was compressed before freeing 'outbuf' */
-			if (args[t].pecheader.compressed == PEC_COMPRESSED) {
+			if (args[t].echeader.compressed == EC_COMPRESSED) {
 				free(args[t].outbuf);
 			}
 			/* Close open file streams */
 			fclose(args[t].input_reader);
 		}
 
+#if DEBUG_LEVEL >= 1
 		batch_index++;
+#endif
 	}
 
 	fclose(out_writer);

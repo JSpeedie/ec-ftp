@@ -1,3 +1,6 @@
+#ifndef ECFTP_HEADER
+#define ECFTP_HEADER
+
 #include <arpa/inet.h>
 #include <stdint.h>
 
@@ -8,7 +11,6 @@
 #define NDATAFD 4
 #define TRUE 1
 #define FALSE 0
-#define DEBUG_OUTPUT 0
 #define CMD_LS 1
 #define CMD_GET 2
 #define CMD_PUT 3
@@ -39,3 +41,5 @@ int do_dh_client(int controlfd, int datafd, uint32_t key[4]);
 int do_dh_server(int controlfd, int datafd, uint32_t key[4]);
 
 void close_data_connections(int *datafds);
+
+#endif
