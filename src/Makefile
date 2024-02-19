@@ -36,7 +36,7 @@ _LZMAOBJ = $(patsubst %.c,%.o,$(_LZMASRC))
 # }}}
 LZMAOBJ = $(patsubst %.c,$(LZMADIR)/$(OBJDIR)/%.o,$(_LZMASRC))
 # Dependency C files
-DEPC = comp.c enc.c aes.c ec-ftp.c
+DEPC = comp.c enc.c aes.c ec-ftp.c fileops.c
 # Dependency object files (E.g. = obj/comp.o obj/enc.o ... )
 # {{{
 # Created by pattern substituting (for all elements in 'DEPC')

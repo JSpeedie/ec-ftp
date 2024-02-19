@@ -13,31 +13,7 @@
 
 #include "lzma/LzmaLib.h"
 #include "comp.h"
-
-
-/** Takes an array of chars '*ret', and an open file '*f' and attempts to read
- * 'num_bytes' bytes from the file, filling '*ret' with what it read.
- *
- * \param '*ret' a pointer to an array chars at least 'num_bytes' long which
- *     will be modified to contain the characters (or bytes) read from the
- *     file.
- * \param 'num_bytes' the number of bytes that should be read from the file.
- * \param '*f' an open file from which the function will attempt to read the
- *     bytes.
- * \return 0 on success, or a negative int upon failure.
- *
- */
-int read_bytes(void * ret, size_t num_bytes, FILE * f) {
-	/* {{{ */
-	size_t nmem_read = 0;
-	if (num_bytes != (nmem_read = fread(ret, 1, num_bytes, f)) ) {
-		fprintf(stderr, "ERROR: read_bytes(): could not read %lu bytes, was only able to read %lu\n", num_bytes, nmem_read);
-		return -1;
-	}
-
-	return 0;
-	/* }}} */
-}
+#include "fileops.h"
 
 
 /** Takes pointer to a struct ec_header and an open file stream, and reads
@@ -87,25 +63,6 @@ int write_ec_header(struct ec_header * echeader, FILE * f) {
 	}
 
 	return 0;
-	/* }}} */
-}
-
-
-/** Writes nothing to a file, clearing it.
- *
- * \param '*file' the file path for the file to be wiped
- * \return void
- */
-void clear_file(char * file) {
-	/* {{{ */
-	FILE* victim = fopen(file, "w");
-	if (victim == NULL) {
-		perror("fopen (clear_file)");
-		return;
-	}
-	fclose(victim);
-
-	return;
 	/* }}} */
 }
 
@@ -312,15 +269,15 @@ void *uncompress_chunk_of_file(void *arg) {
 /** Takes an input file path, compresses the file at that location, writing
  * the compressed result to the file at the output file path.
  *
- * \param '*inputfilepath' the path to the input file.
- * \param '*outputfilepath' the path to the output file.
+ * \param '*input_fp' the path to the input file.
+ * \param '*output_fp' the path to the output file.
  * \return 0 upon success, and a negative int upon failure.
  */
-int comp_file(char * inputfilepath, char * outputfilepath) {
+int comp_file(char * input_fp, char * output_fp) {
 	/* {{{ */
 	struct stat s;
-	short num_batches = 1;
-	stat(inputfilepath, &s);
+	unsigned int num_batches = 1;
+	stat(input_fp, &s);
 	long max_bytes_per_batch = COMP_THREAD_MAX_MEM * COMP_MAX_THREADS;
 
 #if DEBUG_LEVEL >= 1
@@ -355,9 +312,9 @@ int comp_file(char * inputfilepath, char * outputfilepath) {
 #endif
 
 
-	clear_file(outputfilepath);
+	clear_file(output_fp);
 
-	FILE *out_writer = fopen(outputfilepath, "ab");
+	FILE *out_writer = fopen(output_fp, "ab");
 	if (out_writer == NULL) {
 		perror("fopen (comp_file)");
 		return -1;
@@ -375,7 +332,7 @@ int comp_file(char * inputfilepath, char * outputfilepath) {
 	 * STA: Set Thread Arguments
 	 * RT: Run Threads
 	 * MUTW: Make use of the Threads' Work */
-	for (int batch_index = 0; batch_index < num_batches; batch_index++) {
+	for (unsigned int batch_index = 0; batch_index < num_batches; batch_index++) {
 
 		/* If this is not the last batch, read a batch of maximum length with
 		 * the maximum number of threads */
@@ -399,7 +356,7 @@ int comp_file(char * inputfilepath, char * outputfilepath) {
 		/* STA1: Open up the input file with 'num_batches' readers, each at their
 		* starting location for the reading they have to do */
 		for (int thread_index = 0; thread_index < num_threads; thread_index++) {
-			args[thread_index].input_reader = fopen(inputfilepath, "rb");
+			args[thread_index].input_reader = fopen(input_fp, "rb");
 			if (args[thread_index].input_reader == NULL) {
 				perror("fopen (comp_file)");
 				return -1;
@@ -537,8 +494,8 @@ int comp_file(char * inputfilepath, char * outputfilepath) {
 
 #if DEBUG_LEVEL >= 1
 	fprintf(stderr, "(%d) STATUS: compression: \"%s\" has been compressed. " \
-		"The result is stored at \"%s\"\n", getpid(), inputfilepath, \
-		outputfilepath);
+		"The result is stored at \"%s\"\n", getpid(), input_fp, \
+		output_fp);
 #endif
 
 	return 0;
@@ -550,24 +507,24 @@ int comp_file(char * inputfilepath, char * outputfilepath) {
  * 'comp_file()' and uncompresses it, writing the uncompressed result to the
  * file at the output file path.
  *
- * \param '*inputfilepath' the path to the input file.
- * \param '*outputfilepath' the path to the output file.
+ * \param '*input_fp' the path to the input file.
+ * \param '*output_fp' the path to the output file.
  * \return 0 upon success, and a negative int upon failure.
  */
-int uncomp_file(char * inputfilepath, char * outputfilepath) {
+int uncomp_file(char * input_fp, char * output_fp) {
 	/* {{{ */
 	struct stat s;
-	stat(inputfilepath, &s);
+	stat(input_fp, &s);
 
-	FILE * in_file = fopen(inputfilepath, "rb");
+	FILE * in_file = fopen(input_fp, "rb");
 	if (in_file == NULL) {
 		perror("fopen (uncomp_file)");
 		return -1;
 	}
 
-	clear_file(outputfilepath);
+	clear_file(output_fp);
 
-	FILE * out_writer = fopen(outputfilepath, "ab");
+	FILE * out_writer = fopen(output_fp, "ab");
 	if (out_writer == NULL) {
 		perror("fopen (uncomp_file)");
 		return -1;
@@ -643,7 +600,7 @@ int uncomp_file(char * inputfilepath, char * outputfilepath) {
 
 			/* STA2: Set up a reader for each thread such that it will read
 			 * at the part of the file it is responsible for reading */
-			args[thread_index].input_reader = fopen(inputfilepath, "rb");
+			args[thread_index].input_reader = fopen(input_fp, "rb");
 			if (args[thread_index].input_reader == NULL) {
 				perror("fopen (uncomp_file)");
 				return -1;
