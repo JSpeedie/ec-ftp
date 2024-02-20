@@ -313,6 +313,7 @@ of directories contained within.*
 This project is comprised of 4 major, distinct contributions.
 
 ### 1. Basic FTP Client/Server by users pranav93y and nishant-sachdeva
+
 [https://github.com/pranav93y/Basic-FTP-Client-Server](https://github.com/pranav93y/Basic-FTP-Client-Server)  
 It's worth noting that while it ultimately was able to serve as the FTP
 implementation on which we made our extensions (as *extensions* to FTP was the
@@ -321,6 +322,7 @@ changes had to be made to enable support for non-text files, and cleaning up
 and documenting the code base were necessary.
 
 ### 2. The 7-Zip LZMA SDK
+
 [https://7-zip.org/sdk.html](https://7-zip.org/sdk.html)  
 The compression algorithm used in our extension to FTP was the LZMA (aka the
 Lempel-Ziv-Markov chain algorithm), and the C implementation of it that our
@@ -328,23 +330,23 @@ project depends on was provided by this public domain SDK. All the files in
 `src/lzma` come from the 7-Zip LZMA SDK and were not touched by us in anyway.
 
 ### 3. Minor Contributions
+
 Several minor contributions came from Wikipedia. Specifically, the `ROTC` definition, 
 as well as the `initialize_aes_sbox()` and `g_mul()` functions, all in `aes.c`.
 
 ### 4. Us! The CSCD58 students who worked on this project!
+
 Collectively we made the following files:
+
 ```
 aes.c
 aes.h
-clientdo_dh.c
 comp.c
 comp.h
+ec-ftp.c
+ec-ftp.h
 enc.c
 enc.h
-ftputil.c
-ftputil.h
-ec-ftp.h
-serverdo_dh.c
 ```
 
 And made important modifications to the remaining files:
@@ -352,7 +354,34 @@ And made important modifications to the remaining files:
 ```
 ftpclient.c
 ftpserver.c
-Makefile
+```
+
+### 5. Julian Speedie, continuing work on this project
+
+After submission, Julian continued to work on the project, redoing the Makefile,
+making large changes to...
+
+```
+comp.c
+comp.h
+enc.c
+enc.h
+```
+
+to enable multithreaded compression, decompression, encryption and decryption,
+as well as doing lots of work in...
+
+```
+ec-ftp.c
+ec-ftp.h
+```
+
+to maximize code readaility and reuseability. Similar work to document and
+increase readability of the code was done in...
+
+```
+ftpclient.c
+ftpserver.c
 ```
 
 
