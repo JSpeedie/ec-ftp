@@ -80,9 +80,9 @@ The way this extends FTP is as follows:
    file!
 
 
-# Contributions + Analysis + Discussion
+## Contributions + Analysis + Discussion
 
-## Julian Speedie
+### Julian Speedie
 
 Julian made the small fixes to the original FTP client/server program pair to
 get it to work with all types of files, worked on the compression part of the
@@ -95,33 +95,7 @@ is also a part of that work.
 Of note was the work on a custom file format needed for the proper transfer of
 files from client to server or vice versa. This format - which is used for files
 that end in `.comp` (which hopefully you will never see since they are meant to
-be temporary) - takes the form of repeated blocks, each having the structure:
-
-```
-[EC header 1][processed data 1]...[EC header n][processed data n]
-```
-
-Where the structure of a EC header is:
-
-```
-1 byte for a (signed) char representing whether the data in the data chunk is raw and unchanged (=0) or LZMA compressed (=1).
-sizeof(size_t) bytes for a size_t representing the length (in bytes) of the data when it is uncompressed.
-sizeof(size_t) bytes for a size_t representing the length (in bytes) of the data in the data chunk of this block.
-```
-
-and the structure of the processed data is:
-```
-x bytes of data (specified by the second size_t in the EC header) that may or may not require uncompressing.
-```
-
-This was necessary for 2 reasons. First, the compression algorithm does not
-always return a data stream that is smaller than the stream of original data.
-In those cases, it's better to send the original data than data that not only
-takes more space but must also be uncompressed upon receiving it. Secondly,
-it's more efficient to send the size of the uncompressed data chunk (a number
-we know from when we compressed the data chunk) and allocate precisely enough
-space to uncompress than it is to allocate more than is needed and resizing
-later.
+be temporary) is described in the section on file formats.
 
 The main takeaway I have after implementing compression like this is the
 question of whether or not compression should be implemented at the application
@@ -144,7 +118,7 @@ burdened while your server and client are also relatively unburdened, it simply
 does not make sense to compress data as part of a protocol.
 
 
-## Dawson Brown
+### Dawson Brown
 
 Dawson worked on the encryption portion of the project. Work can be found in
 the files `enc.c`, `enc.h`, `aes.c`, and `aes.h`. Specifically, `aes.c`
@@ -200,9 +174,9 @@ suitable for our needs and does provide a level of encryption, it should not be
 considered secure in any production environment.
 
 
-# How to run and test
+## How to run and test
 
-## Compilation
+### Compilation
 
 First you will need to compile the project. You can do this by running the
 following commands:
@@ -220,7 +194,7 @@ This will compile both the `ftpclient` and `ftpserver` binaries placing them in
 `ec-ftp/bin/ftpclient/` and
 `ec-ftp/bin/ftpserver/`, respectively.
 
-## Running the code
+### Running the code
 
 In one terminal, start the server:
 ```
@@ -249,14 +223,14 @@ port for both your ftpserver and ftpclient. If you did, try a different port.
 You will interface with the server through the client, you cannot run any
 commands on the server side, but you will see some output that might be helpful.
 
-### Client Interface Commands
+#### Client Interface Commands
 
 - ls, lists the current directory
 - get <filename>, gets the file from server to client.
 - put <filename>, puts the files from the client to the server.
 - quit, exits the client program
 
-## Tests
+### Tests
 
 To test, you want to setup 2 terminals as described in the "Running the code"
 section, and also you may need to copy a variety of files into both your
@@ -266,7 +240,7 @@ client to put) (we provide some in the zip that we submitted, but feel free to
 test with more). Once you've done that, feel free to begin any of the following
 tests:
 
-### 1. Client GET/Server RETR
+#### 1. Client GET/Server RETR
 
 1. From your `ftpclient` terminal, type `ls` at the `ftpclient` prompt and hit
    enter to see what files the server has.
@@ -275,7 +249,7 @@ tests:
 3. It should appear (byte for byte identical to the original on the server, in
    content and name) in your `ec-ftp/bin/ftpclient` directory!
 
-### 2. Client PUT/Server STOR
+#### 2. Client PUT/Server STOR
 
 1. If you are running the `ftpclient`, press Ctrl+C to kill the process. From
    your `ec-ftp/bin/ftpclient` directory, run the shell
@@ -290,7 +264,7 @@ tests:
 4. It should appear (byte for byte identical to the original on the server, in
    content and name) in your `ec-ftp/bin/ftpclient` directory!
 
-### 3. Seeing the .enc and .comp files
+#### 3. Seeing the .enc and .comp files
 1. Press Ctrl+C in both your `ftpclient` terminal and your `ftpserver` terminal
    if they are running.
 1. Edit `src/ec-ftp.h` and change `KEEP_TEMP_ENC_FILES` to `1` and
@@ -303,7 +277,7 @@ tests:
    .comp.enc-XXXXXX files on both the server and client won't be cleaned up so
    you can see them!
 
-### 4. Seeing packet activity on Wireshark
+#### 4. Seeing packet activity on Wireshark
 1. Open up wireshark and select "Loopback: lo" as the interface you want to
    capture on
 2. In the filter bar, type "tcp"
@@ -334,11 +308,11 @@ of directories contained within.*
 
 ![Imgur](https://imgur.com/oyjYZ36.gif)
 
-# Acknowledgements
+## Acknowledgements
 
 This project is comprised of 4 major, distinct contributions.
 
-## 1. Basic FTP Client/Server by users pranav93y and nishant-sachdeva
+### 1. Basic FTP Client/Server by users pranav93y and nishant-sachdeva
 [https://github.com/pranav93y/Basic-FTP-Client-Server](https://github.com/pranav93y/Basic-FTP-Client-Server)  
 It's worth noting that while it ultimately was able to serve as the FTP
 implementation on which we made our extensions (as *extensions* to FTP was the
@@ -346,18 +320,18 @@ focus of this project), this code base was not fully functional. Importantly,
 changes had to be made to enable support for non-text files, and cleaning up
 and documenting the code base were necessary.
 
-## 2. The 7-Zip LZMA SDK
+### 2. The 7-Zip LZMA SDK
 [https://7-zip.org/sdk.html](https://7-zip.org/sdk.html)  
 The compression algorithm used in our extension to FTP was the LZMA (aka the
 Lempel-Ziv-Markov chain algorithm), and the C implementation of it that our
 project depends on was provided by this public domain SDK. All the files in
 `src/lzma` come from the 7-Zip LZMA SDK and were not touched by us in anyway.
 
-## 3. Minor Contributions
+### 3. Minor Contributions
 Several minor contributions came from Wikipedia. Specifically, the `ROTC` definition, 
 as well as the `initialize_aes_sbox()` and `g_mul()` functions, all in `aes.c`.
 
-## 4. Us! The CSCD58 students who worked on this project!
+### 4. Us! The CSCD58 students who worked on this project!
 Collectively we made the following files:
 ```
 aes.c
@@ -380,3 +354,110 @@ ftpclient.c
 ftpserver.c
 Makefile
 ```
+
+
+## File formats
+
+### Encryption
+
+```
+.enc file structure:
+
++------------------------+     +------------------------+
+| encrypted data chunk 1 | ... | encrypted data chunk n |
+|               16 bytes |     |               16 bytes |
++------------------------+     +------------------------+
+```
+
+where...
+
+```
+encrypted data chunks 1 - (n-1) structure:
+
++----------+
+| data     |
+| 16 bytes |
++----------+
+
+data: data from the file, encrypted in a 16 byte chunk.
+```
+
+and ...
+
+```
+final encrypted data chunk n structure:
+
++--------------------------+----------------------------------+
+| data                     |  padding bytes                   |
+| (file length % 16) bytes |  (16 - (file length % 16)) bytes |
++--------------------------+----------------------------------+
+
+data: data from the file. This data will be encrypted as a 16 byte chunk that
+      includes both this data and the padding bytes.
+padding bytes: a series of redundant bytes used to pad the encrypted output to
+               a size that is a multiple of 16 bytes. Each padding byte
+               indiviually stores a value representing the number of padding
+               bytes in this chunk. If the file length is already a multiple of
+               16 then a new 16 byte chunk made exclusively of padding bytes is
+               added.
+```
+
+This gives us 2 important guarantees. First, we know that all encrypted data
+will have a size that is a multiple of 16. Second, we know that the last
+byte of the last chunk will contain the number of padding bytes that need
+to be stripped off.
+
+
+### Compression
+
+```
+.comp file structure:
+
++-------------+------------------+     +-------------+------------------+
+| EC header 1 | processed data 1 | ... | EC header n | processed data n |
++-------------+------------------+     +-------------+------------------+
+```
+
+where...
+
+```
+EC header structure:
+
++------------+-----------------------+----------------------+
+| compressed |  orig_size            | proc_size            |
+|     1 byte |  sizeof(size_t) bytes | sizeof(size_t) bytes |
++------------+-----------------------+----------------------+
+
+compressed: a (signed) char representing whether the data in the data chunk is
+            raw and unchanged (=0) or LZMA compressed (=1).
+orig_size: a size_t representing the length (in bytes) of the data when it is
+           uncompressed. This field is not set if the compressed field == 0.
+proc_size: a size_t representing the length (in bytes) of the data in the data
+           chunk of this block.
+```
+
+and...
+
+```
+processed data structure:
+
++--------+     +--------+
+| data 1 | ... | data n |
+| 1 byte |     | 1 byte |
++--------+     +--------+
+
+where n = proc_size as specified in the preceding EC header. The processed data
+may or may not require uncompressing. This can be checked by looking at the
+compressed field of the preceding EC header.
+```
+
+The EC header and its particular contents are necessary for 2 reasons. First,
+any compression algorithm will not always return a data stream that is smaller
+than the stream of original data. In those cases, it's better to send the
+original data than data that not only takes more space but must also be
+uncompressed upon receiving it. Second, it's more efficient to send the size of
+the original data chunk (a number we know from when we compressed the data
+chunk) and allocate precisely enough space to uncompress than it is to allocate
+generously, or to resize allocation in order to make room for uncompressed
+data. Lastly, we need to know the size of the processed data if we are to
+locate the need EC header in the file.
