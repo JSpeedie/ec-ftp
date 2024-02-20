@@ -16,13 +16,6 @@
 #define CMD_PUT 3
 #define CMD_QUIT 4
 
-// TODO: Is the "do while" necessary here? Why not just have the for loop on its own?
-// TODO: is there a way to not have to pass 'i' here and to simply instantiate/define 'i' in the macro?
-/** Adds all 'n' file descriptors in 'fds' to 'readset' */
-#define FD_SETS(fds, readset, n, i)\
-  do {\
-    for (i = 0; i < n; i++) { FD_SET(fds[i], readset); }\
-  } while (0)
 
 void trim(char *str);
 
@@ -39,7 +32,5 @@ int process_received_file(char * filename, char * recv_fp, uint32_t key[4]);
 int do_dh_client(int controlfd, int datafd, uint32_t key[4]);
 
 int do_dh_server(int controlfd, int datafd, uint32_t key[4]);
-
-void close_data_connections(int *datafds);
 
 #endif

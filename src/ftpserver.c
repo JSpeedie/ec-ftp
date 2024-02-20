@@ -174,16 +174,15 @@ int do_list(int controlfd, int datafd, char *input){
 }
 
 
-int do_retr(int controlfd, int *datafds, char *input) {
+int do_retr(int controlfd, int datafd, char *input) {
 	char filename[1024], sendline[MAXLINE+1];
 	bzero(filename, (int)sizeof(filename));
 	bzero(sendline, (int)sizeof(sendline));
-    fd_set writefdset;
-    int maxfd;
+	int err = 0;
 
 	/* CSCD58 addition - Encryption */
 	uint32_t key[4];
-	do_dh_server(controlfd, datafds[0], key);
+	do_dh_server(controlfd, datafd, key);
 	/* CSCD58 end of addition - Encryption */
 
 	if (get_filename(input, filename) > 0){
@@ -213,14 +212,6 @@ int do_retr(int controlfd, int *datafds, char *input) {
 	}
 	/* CSCD58 end of addition - Compression */
 	
-	maxfd = datafds[0];
-
-	for (int i = 0; i < NDATAFD; i++) {
-		if (datafds[i] > maxfd) {
-			maxfd = datafds[i] + 1;
-		}
-	}
-
 	FILE *in;
 
 	if (!(in = fopen(prepared_fp, "rb"))) {
@@ -229,57 +220,29 @@ int do_retr(int controlfd, int *datafds, char *input) {
 		return -1;
 	}
 
-	/* CSCD58 addition - Parallelization */
 	uint16_t nmem_read = 0;
-	uint32_t cur_pos = 0;
-	int j = 0;
-	/* the parallelized chunk header is one uint32_t (4 bytes) followed by one
-	 * uint16_t (2 bytes) */
-	int header_size = 6;
 	
-	while (0 != (nmem_read = fread(&sendline[header_size], 1, MAXLINE - header_size, in)) ) {
-		FD_SETS(datafds, &writefdset, NDATAFD, j);
-		// TODO: select() man page says if you're using select in a loop,
-		// you gotta do some reinitializing. Make sure that takes place here
-		// before the select() call
-		// TODO: this should check for error? (i.e. when it returns -1)
-		select(maxfd, NULL, &writefdset, NULL, NULL);
-	
-		for (int i = 0; i < NDATAFD; i++) {
-			if (FD_ISSET(datafds[i], &writefdset)) {
-				uint16_t to_write = nmem_read;
-				/* Handle endianness */
-				uint16_t nmem_read_n = htons(nmem_read);
-				uint32_t cur_pos_n = htonl(cur_pos);
-				// TODO: magic numbers here tied to sizeof nmem_read and cur_pos
-				/* Fill in the header (aka. the first 6 bytes of sendline */
-				memcpy(sendline, &cur_pos_n, sizeof(uint32_t));
-				memcpy(&sendline[sizeof(uint32_t)], &nmem_read_n, sizeof(uint16_t));
-				to_write += header_size;
+	while (0 != (nmem_read = fread(&sendline, 1, MAXLINE, in)) ) {
+		size_t written = 0;
+		
+		/* Write until all bytes in 'sendline' have been sent */
+		while (written < nmem_read) {
+			size_t nmem_written = write(datafd, &sendline[written], nmem_read - written);
 
-				size_t written = 0;
-				
-				/* Write until all bytes in 'sendline' have been sent */
-				while (written < to_write) {
-					size_t nmem_written = write(datafds[i], &sendline[written], to_write - written); // TODO: Parallelize
-
-					// TODO: is breaking the best way to handle an error here?
-					if (nmem_written < 0) {
-						break;
-					} else {
-						written += nmem_written;
-					}
-				}
-				// TODO: is this bzero necessary? aren't we precise with how
-				// many bytes we've read/how many we are to write?
-				/* bzero(sendline, (size_t)sizeof(sendline)); */
+			if (nmem_written < 0) {
+				err = 1;
 				break;
+			} else {
+				written += nmem_written;
 			}
 		}
-		
-		cur_pos += nmem_read;
 	}
-	/* CSCD58 end of addition - Parallelization */
+
+	if (err != 0) {
+		if (0 != remove(prepared_fp)) {
+			fprintf(stderr, "WARNING: could not remove temporary processed file!\n");
+		} 
+	}
 
 	sprintf(sendline, "200 Command OK");
 	write(controlfd, sendline, strlen(sendline));
@@ -291,6 +254,8 @@ int do_retr(int controlfd, int *datafds, char *input) {
 			fprintf(stderr, "WARNING: could not remove temporary encrypted .enc file!\n");
 		} 
 	}
+
+	// TODO: remove temporary compressed file too?
 
 	/* Free dynamically allocated memory */
 	free(prepared_fp);
@@ -306,15 +271,15 @@ int do_stor(int controlfd, int datafd, char *input) {
 	bzero(sendline, (int)sizeof(sendline));
 	bzero(recvline, (int)sizeof(recvline));
 	bzero(str, (int)sizeof(str));
-
+	// TODO: these variables need better names
 	int n = 0, p = 0;
 
-	/* CSCD58 addition - Parallelization */
+	/* CSCD58 addition - Encryption */
 	uint32_t key[4];
 	do_dh_server(controlfd, datafd, key);
-	/* CSCD58 end of addition - Parallelization */
+	/* CSCD58 end of addition - Encryption */
 
-	if(get_filename(input, filename) > 0){
+	if (get_filename(input, filename) > 0) {
 		sprintf(str, "%s", filename);
 	}else{
 		printf("Filename Not Detected\n");
@@ -353,7 +318,7 @@ int do_stor(int controlfd, int datafd, char *input) {
 	write(controlfd, sendline, strlen(sendline));
 	fclose(fp);
 
-	/* CSCD58 addition - Compression and Encryption */
+	/* CSCD58 addition - Compression + Encryption */
 	/* Decrypt (using key 'key') and decompress received file stored at the
 	 * filepath 'recv_fp', outputting the result to the file at path
 	 * 'filename' */
@@ -364,7 +329,7 @@ int do_stor(int controlfd, int datafd, char *input) {
 
 	/* Free dynamically allocated memory */
 	free(recv_fp);
-	/* CSCD58 end of addition - Compression */
+	/* CSCD58 end of addition - Compression + Encryption */
 
 	return 1;
 }
@@ -424,7 +389,7 @@ int main(int argc, char **argv) {
 			} else if (pid == 0) {
 				close(listenfd);
 
-				int datafds[NDATAFD], cmd, x = 0;
+				int datafd, cmd, x = 0;
 				uint16_t client_port = 0;
 				char recvline[MAXLINE+1];
 				char client_ip[INET_ADDRSTRLEN], command[4096];
@@ -458,11 +423,9 @@ int main(int argc, char **argv) {
 					read_port_command(recvline, &client_ip[0], &client_port);
 					printf("(%d) client_ip: %s client_port: %d\n", getpid(), client_ip, client_port);
 
-					/* Setup all the data connections */
-					for (int i = 0; i < NDATAFD; i++) {
-						if (setup_data_connection(&datafds[i], client_ip, client_port, port) < 0) {
-							break;
-						}
+					/* Setup the data connection */
+					if (setup_data_connection(&datafd, client_ip, client_port, port) < 0) {
+						break;
 					}
 
 					/* After receiving the PORT command, we must handle a range
@@ -475,18 +438,18 @@ int main(int argc, char **argv) {
 
 					cmd = get_command(command);
 					if(cmd == CMD_LS){
-						do_list(client_fd, datafds[0], command);
+						do_list(client_fd, datafd, command);
 					}else if(cmd == CMD_GET){
-						do_retr(client_fd, datafds, command);
+						do_retr(client_fd, datafd, command);
 					}else if(cmd == CMD_PUT){
-						do_stor(client_fd, datafds[0], command);
+						do_stor(client_fd, datafd, command);
 					// TODO: what's going on with this last 'else if'?
 					}else if(cmd == 4){
 						char reply[1024];
 						sprintf(reply, "550 Filename Does Not Exist");
 						write(client_fd, reply, strlen(reply));
 					}
-					close_data_connections(datafds);
+					close(datafd);
 				}
 				// TODO: this print should almost certainly be removed
 				printf("(%d) Exiting Child Process...\n", getpid());

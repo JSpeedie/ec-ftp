@@ -314,25 +314,14 @@ int do_ls(int controlfd, int datafd, char *input){
 
 
 // TODO: break up this function, add brief documentation
-int do_get(int controlfd, int *datafds, char *input) {
-	char filename[256], serv_cmd[MAXLINE+1], recvline[MAXLINE+1], *temp;
+int do_get(int controlfd, int datafd, char *input) {
+	char filename[256], serv_cmd[MAXLINE+1], recvline[MAXLINE+1];
 	// TODO:do we have to bzero the whole string, for any of these strings? Can
 	// we not just make the 0th element = \0?
 	bzero(filename, (int)sizeof(filename));
 	bzero(recvline, (int)sizeof(recvline));
 	bzero(serv_cmd, (int)sizeof(serv_cmd));
-	// TODO: this variable needs a better name
-	int n = 0;
-	/* pos[i] contains the position in the file where the parallelized
-	 * chunk begins and appears as a uint32_t at the 1st byte in the header */
-	uint32_t pos[NDATAFD];
-	/* nmem[i] contains the number of non-header bytes in the parallelized
-	 * chunk and appears as a uint16_t at the 5th byte in the header */
-	uint16_t nmem[NDATAFD];
-	uint8_t closed[NDATAFD];
-
-	fd_set readfdset;
-	int maxfd, data_finished = FALSE, control_finished = FALSE;
+	int err = 0;
 
 	if (get_filename(input, filename) < 0) {
 		printf("No filename Detected...\n");
@@ -347,9 +336,12 @@ int do_get(int controlfd, int *datafds, char *input) {
 
 	/* Construct FTP service command and send it over the control connection */
 	sprintf(serv_cmd, "RETR %s", filename);
-	// TODO: is this printf necessary?
-	printf("File: %s\n", filename);
 	write(controlfd, serv_cmd, strlen(serv_cmd));
+
+	/* CSCD58 addition - Encryption */
+	uint32_t key[4];
+	do_dh_client(controlfd, datafd, key);
+	/* CSCD58 end of addition - Encryption */
 
 	/* CSCD58 addition - Compression */
 	/* Make temporary name for receiving file
@@ -361,162 +353,33 @@ int do_get(int controlfd, int *datafds, char *input) {
 	}
 	/* CSCD58 end of addition - Compression */
 
-	FD_ZERO(&readfdset);
-	FD_SET(controlfd, &readfdset);
-	// FD_SET(datafd, &readfdset);
+	FILE *recv_file_stream;
 
-    /* CSCD58 addition - Parallelization */
-	// TODO: what's going on here? Best guess: it's initializing the different
-	// fds used in parallelization and then with maxfd, it's determining the
-	// highest fd number because it is a required argument for select()
-	int i = 0;
-	maxfd = datafds[0];
-
-	for (i = 0; i < NDATAFD; i++) {
-		FD_SET(datafds[i], &readfdset);
-		pos[i] = 0;
-		nmem[i] = 0;
-		closed[i] = 0;
-		if (datafds[i] > maxfd) {
-			maxfd = datafds[i] + 1;
-		}
-	}
-
-	if (controlfd > maxfd) {
-		maxfd = controlfd + 1;
-	}
-    /* End CSCD58 addition - Parallelization */
-
-	FILE *fp;
-	if ((fp = fopen(recv_fp, "w")) == NULL) {
+	if ((recv_file_stream = fopen(recv_fp, "w")) == NULL) {
 		perror("file error");
 		return -1;
 	}
 
-	/* CSCD58 Addition - Encryption */
-	uint32_t key[4];
-	do_dh_client(controlfd, datafds[0], key);
-	/* End CSCD58 Addition - Encryption */
+	int read_len = 0;
 
-	int finished_data_fds = 0;
-	// TODO: what the heck does 'err' do?
-	int err = 0;
-	/* the parallelized chunk header is one uint32_t (4 bytes) followed by one
-	 * uint16_t (2 bytes) */
-	int header_size = 6;
-
-    /* CSCD58 Additon - Parallelization */
-	// TODO: this while loop is the biggest section in this function and that
-	// perhaps indicates that it is a good candidate for being put in a helper
-	// function
+	/* Receive data from the server, writing it to the receive file */
 	while (1) {
-		// TODO: select() man page says if you're using select in a loop,
-		// you gotta do some reinitializing. Make sure that takes place here
-		// before the select() call
-		// TODO: both control_finished and data_finished are initialized to
-		// FALSE and have no chance of being changed prior to these checks
-        if(control_finished == FALSE){
-			FD_SET(controlfd, &readfdset);
+		read_len = read(datafd, recvline, MAXLINE);
+		/* If there was an error */
+		if (read_len < 0) {
+			err = 1;
+			break;
+		/* If something was read, write it to the receiving file */
+		} else if (read_len > 0) {
+			fwrite(recvline, 1, read_len, recv_file_stream);
+			bzero(recvline, (int)sizeof(recvline));
+		/* If nothing was read, stop receiving */
+		} else {
+			break;
 		}
-        if(data_finished == FALSE){
-			FD_SETS(datafds, &readfdset, NDATAFD, i);
-		}
-		// TODO: this should check for error? (i.e. when it returns -1)
-        select(maxfd, &readfdset, NULL, NULL, NULL);
-
-		/* If there is anything to read on the control connection */
-        if (FD_ISSET(controlfd, &readfdset)) {
-            bzero(recvline, (int)sizeof(recvline));
-            read(controlfd, recvline, MAXLINE);
-            printf("Server Control Response: %s\n", recvline);
-            temp = strtok(recvline, " ");
-            if (atoi(temp) != 200) {
-                err = 1;
-                printf("File Error...\nExiting...\n");
-                break;
-            }
-            control_finished = TRUE;
-            bzero(recvline, (int)sizeof(recvline));
-            FD_CLR(controlfd, &readfdset);
-        }
-
-		/* If there is anything to read on any of the other readfds */
-		for (i = 0; i < NDATAFD; i++) {
-			if (FD_ISSET(datafds[i], &readfdset)) {
-				bzero(recvline, (int)sizeof(recvline));
-
-				/* Peak at the data in the given FD without removing it from
-				 * the queue, saving the length of the series of bytes possible
-				 * to read in 'n' */
-				// TODO: error handling for recv()
-				if ((n = recv(datafds[i], recvline, MAXLINE, MSG_PEEK)) > 0) {
-					/* If we have received less than the header (position + nmem) */
-					if (n < header_size) {
-						continue;
-					} else {
-						if (nmem[i] > 0 && nmem[i] < n) {
-							n = read(datafds[i], recvline, nmem[i]);
-						} else {
-							n = read(datafds[i], recvline, n);
-						}
-					}
-
-					int off = 0;
-					if (nmem[i] == 0) {
-						/* For handling endianness */
-						uint16_t nmem_read_n;
-						uint32_t cur_pos_n;
-						/* Read the first 4 bytes into pos[i] as the position */
-						memcpy(&cur_pos_n, recvline, sizeof(uint32_t));
-						pos[i] = ntohl(cur_pos_n);
-						/* ... then read the 2 bytes that come after to nmem[i] */
-						memcpy(&nmem_read_n, &recvline[sizeof(uint32_t)], sizeof(uint16_t));
-						nmem[i] = ntohs(nmem_read_n);
-						/* Adjust the offset for 'recvline' past the header
-						 * info */
-						off += header_size;
-					}
-					// TODO: possible reason Jacky said the program doesn't
-					// work with files much bigger than 10MBs is that nmem and
-					// pos are unnecessarily small (uint16_t and uint32_t). By
-					// my math, the size limitation of pos should affect files
-					// at around 4 GBs. Anyway, fseek() takes a long (uint64_t
-					// on my system) so it should be changed from uint32_t to
-					// long when I wanna fiddle with this.
-					fseek(fp, pos[i], SEEK_SET);
-					/* Write all the non-header bytes that were received */
-					// TODO: check for error
-					fwrite(&recvline[off], 1, n - off, fp);
-					nmem[i] -= (n - off);
-					pos[i] = pos[i] + (n - off);
-				/* if recv() read 0 bytes then this data fd must be finished transmitting data */
-				// TODO: this 'else' is really checking only for 'n' == 0 from
-				// the previous recv call, but obviously that ignores the fact
-				// that the recv() call could fail and return a value < 0
-                } else {
-                    if (!closed[i]) {
-                        finished_data_fds++;
-                        closed[i] = 1;
-                    }
-                }
-				if (finished_data_fds >= NDATAFD) {
-					data_finished = TRUE;
-				}
-                FD_CLR(datafds[i], &readfdset);
-            }
-        }
-		// TODO: control_finished is never changed in this loop so checking it
-		// for being TRUE here is unnecessary even though I see what the
-		// original author was going for (we do need both connections to be
-		// finished before continuing
-        if ((control_finished == TRUE) && (data_finished == TRUE)) {
-            break;
-        }
-
-    }
-	fclose(fp);
+	}
+	fclose(recv_file_stream);
 	printf("File received\n"); // TODO: remove
-    /* End CSCD58 Addition - Parallelization */
 
 	/* If there was an error receiving the file, delete the temp file it was to
 	 * be written to */
@@ -527,7 +390,7 @@ int do_get(int controlfd, int *datafds, char *input) {
 		return -1;
 	}
 
-	/* CSCD58 addition - Compression and Encryption */
+	/* CSCD58 addition - Compression + Encryption */
 	/* Decrypt (using key 'key') and decompress received file stored at the
 	 * filepath 'recv_fp', outputting the result to the file at path
 	 * 'filename' */
@@ -538,23 +401,30 @@ int do_get(int controlfd, int *datafds, char *input) {
 
 	/* Free dynamically allocated memory */
 	free(recv_fp);
-	/* CSCD58 end of addition - Compression */
+	/* CSCD58 end of addition - Compression + Encryption */
 
 	return 1;
 }
 
 
 // TODO: break up this function, add brief documentation
-int do_put(int controlfd, int datafd, char *input){
-	char filename[256], str[MAXLINE+1], recvline[MAXLINE+1], sendline[MAXLINE+1], serv_cmd[MAXLINE+1], *temp;
+int do_put(int controlfd, int datafd, char *input) {
+	char filename[256];
+	char str[MAXLINE+1];
+	char recvline[MAXLINE+1];
+	char sendline[MAXLINE+1];
+	char serv_cmd[MAXLINE+1];
+	char *temp;
 	bzero(filename, (int)sizeof(filename));
 	bzero(recvline, (int)sizeof(recvline));
 	bzero(str, (int)sizeof(str));
 
 	fd_set wrset, rdset;
-	int maxfdp1, data_finished = FALSE, control_finished = FALSE;
+	int maxfdp1;
+	int data_finished = FALSE;
+	int control_finished = FALSE;
 
-	if(get_filename(input, filename) < 0){
+	if (get_filename(input, filename) < 0) {
 		printf("No filename Detected...\n");
 		char send[1024];
 		sprintf(send, "SKIP");
@@ -565,27 +435,26 @@ int do_put(int controlfd, int datafd, char *input){
 		return -1;
 	}
 
+	/* Prepare STOR and send the command */
 	sprintf(serv_cmd, "STOR %s", filename);
+	write(controlfd, serv_cmd, strlen(serv_cmd));
 
 	FD_ZERO(&wrset);
 	FD_ZERO(&rdset);
 	FD_SET(controlfd, &rdset);
 	FD_SET(datafd, &wrset);
 
+	/* Get the max file descripter number for select() */
 	if(controlfd > datafd){
 		maxfdp1 = controlfd + 1;
 	}else{
 		maxfdp1 = datafd + 1;
 	}
 
-	FILE *in;
-
-	write(controlfd, serv_cmd, strlen(serv_cmd));
-
-	/* CSCD58 Addition - Encryption + Compression */
+	/* CSCD58 addition - Encryption */
 	uint32_t key[4];
 	do_dh_client(controlfd, datafd, key);
-	/* CSCD58 Addition - Encryption */
+	/* CSCD58 end of addition - Encryption */
 
 	/* CSCD58 addition - Compression + Encryption */
 	char * prepared_fp;
@@ -603,7 +472,9 @@ int do_put(int controlfd, int datafd, char *input){
 		printf("Server Control Response: %s\n", send);
 		return -1;
 	}
-	/* End of CSCD58 addition - Compression + Encryption */
+	/* CSCD58 end of addition - Compression + Encryption */
+
+	FILE *in;
 
 	if ((in = fopen(prepared_fp, "rb")) == NULL) {
 		fprintf(stderr, "ERROR: could not read file that is to be sent!\n");
@@ -611,16 +482,21 @@ int do_put(int controlfd, int datafd, char *input){
 	}
 
 	while (1) {
-		if(control_finished == FALSE){FD_SET(controlfd, &rdset);}
-		if(data_finished == FALSE){FD_SET(datafd, &wrset);}
+		if (control_finished == FALSE) {
+			FD_SET(controlfd, &rdset);
+		}
+		if (data_finished == FALSE) {
+			FD_SET(datafd, &wrset);
+		}
+
 		select(maxfdp1, &rdset, &wrset, NULL, NULL);
 
-		if(FD_ISSET(controlfd, &rdset)){
+		if (FD_ISSET(controlfd, &rdset)) {
 			bzero(recvline, (int)sizeof(recvline));
 			read(controlfd, recvline, MAXLINE);
 			printf("Server Control Response: %s\n", recvline);
 			temp = strtok(recvline, " ");
-			if(atoi(temp) != 200){
+			if (atoi(temp) != 200) {
 				printf("File Error...\nExiting...\n");
 				break;
 			}
@@ -629,7 +505,7 @@ int do_put(int controlfd, int datafd, char *input){
 			FD_CLR(controlfd, &rdset);
 		}
 
-		if(FD_ISSET(datafd, &wrset)){
+		if (FD_ISSET(datafd, &wrset)) {
 			bzero(sendline, (int)sizeof(sendline));
 			/* CSCD58 addition */
 			size_t nmem_read = 0;
@@ -643,7 +519,7 @@ int do_put(int controlfd, int datafd, char *input){
 			FD_CLR(datafd, &wrset);
 			close(datafd);
 		}
-		if((control_finished == TRUE) && (data_finished == TRUE)){
+		if ((control_finished == TRUE) && (data_finished == TRUE)) {
 			break;
 		}
 	}
@@ -653,6 +529,8 @@ int do_put(int controlfd, int datafd, char *input){
 			fprintf(stderr, "WARNING: could not remove temporary encrypted .enc file!\n");
 		}
 	}
+
+	// TODO: remove temporary compressed file too?
 
 	/* Close open files */
 	fclose(in);
@@ -722,11 +600,9 @@ int setup_data_conn(int * listenfd, struct sockaddr_in * data_addr, \
 
 
 int main(int argc, char **argv) {
-	int server_port, controlfd, listenfd, datafds[NDATAFD], cmd;
+	int server_port, controlfd, listenfd, datafd, cmd;
 	struct sockaddr_in serv_addr, data_addr;
 	char command[1024], ip[INET_ADDRSTRLEN], port_command[MAXLINE+1];
-
-
 
 	if (argc != 3) {
 		printf("Invalid Number of Arguments...\n");
@@ -766,55 +642,47 @@ int main(int argc, char **argv) {
 		//get command from user
 		cmd = get_command(command);
 
-		/* If the user entered the "quit" command at the prompt */
-		if (cmd == CMD_QUIT){
-			// TODO: double check this if statement. What is it checking for?
-			// In which (if any) circumstances should the program then
-			// close_data_connections()?
-			if (do_quit(controlfd) < 0) {
-				close_data_connections(datafds);
-			}
-			break;
-		}
-
 #if DEBUG_LEVEL >= 1
 	fprintf(stdout, "command: %s\n", command);
 #endif
 
+		/* If the user entered the "quit" command at the prompt */
+		if (cmd == CMD_QUIT){
+			// TODO: double check this if statement. What is it checking for?
+			// In which (if any) circumstances should the program then
+			if (do_quit(controlfd) < 0) {
+				close(datafd);
+			}
+			break;
+		}
+
 		/* Send the port command that was constructed earlier */
 		write(controlfd, port_command, strlen(port_command));
-
-        /* CSCD58 Addition - Parallelization */
-        int i = 0;
-        for (i = 0; i < NDATAFD; i++) {
-            datafds[i] = accept(listenfd, (struct sockaddr *) NULL, NULL);
-            //printf("%d-th data connection established\n", i);
-        }
-        /* End CSCD58 Addition - Parallelization */
+		/* Establish data connection by listening for the server who is
+		 * attempting to connect() */
+		datafd = accept(listenfd, (struct sockaddr *) NULL, NULL);
 
 #if DEBUG_LEVEL >= 1
 	fprintf(stdout, "Data connection established. Ready to receive data!\n");
 #endif
 
 		if (cmd == CMD_LS) {
-			if (do_ls(controlfd, datafds[0], command) < 0) {
-				close_data_connections(datafds);
+			if (do_ls(controlfd, datafd, command) < 0) {
+				close(datafd);
 				continue;
 			}
 		} else if (cmd == CMD_GET) {
-			if (do_get(controlfd, datafds, command) < 0) {
-				close_data_connections(datafds);
+			if (do_get(controlfd, datafd, command) < 0) {
+				close(datafd);
 				continue;
 			}
 		} else if(cmd == CMD_PUT) {
-			if (do_put(controlfd, datafds[0], command) < 0) {
-				close_data_connections(datafds);
+			if (do_put(controlfd, datafd, command) < 0) {
+				close(datafd);
 				continue;
 			}
 		}
-		/* CSCD58 Addition - Parallelization? */
-		close_data_connections(datafds);
-		/* End CSCD58 Addition - Parallelization? */
+		close(datafd);
 	}
 	close(controlfd);
 	return TRUE;

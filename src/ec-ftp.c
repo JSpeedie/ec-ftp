@@ -340,7 +340,7 @@ int do_dh_client(int controlfd, int datafd, uint32_t key[4]) {
 /* End CSCD58 Addition - Encryption */
 
 
-/* CSCD58 addition - Encryption + Parallelization? */
+/* CSCD58 addition - Encryption */
 int do_dh_server(int controlfd, int datafd, uint32_t key[4]) {
 	uint64_t dh_p = 1;
 	dh_p = (dh_p << 32) - 99;
@@ -370,11 +370,4 @@ int do_dh_server(int controlfd, int datafd, uint32_t key[4]) {
 	
 	return 0;
 }
-/* CSCD58 end of addition - Encryption + Parallelization? */
-
-
-void close_data_connections(int *datafds) {
-	for (int i = 0; i < NDATAFD; i++) {
-		close(datafds[i]);
-	}
-}
+/* CSCD58 end of addition - Encryption */
