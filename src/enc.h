@@ -14,9 +14,18 @@
 #define ENC_MAX_THREADS 4
 
 
+/* Define a struct for passing AES variables to a encryption/decryption thread */
+struct enc_aes_vars {
+	/* Necessary encryption vars */
+	uint8_t sbox[256];
+	uint8_t sboxinv[256];
+	uint8_t rkeys[11][16];
+};
+
+
 /* Define a struct for passing arguments to a thread used for
  * encrypting/decrypting a file */
-typedef struct enc_thread_args {
+struct enc_thread_args {
 	/* An open file stream from which will do the reading. It should be
 	 * positioned correctly before being passed to the thread */
 	FILE *input_reader;
@@ -32,11 +41,10 @@ typedef struct enc_thread_args {
 	/* Whether the encrypted data is padded or not */
 	char padded;
 	/* Necessary encryption vars */
-	uint8_t sbox[256];
-	uint8_t rkeys[11][16];
+	struct enc_aes_vars *aes_vars;
 	/* For returning a success/error code */
 	int return_val;
-}EncThreadArgs;
+};
 
 
 char * temp_encryption_name(char * filename);

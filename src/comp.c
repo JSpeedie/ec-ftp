@@ -312,9 +312,7 @@ int comp_file(char * input_fp, char * output_fp) {
 #endif
 
 
-	clear_file(output_fp);
-
-	FILE *out_writer = fopen(output_fp, "ab");
+	FILE *out_writer = fopen(output_fp, "wb");
 	if (out_writer == NULL) {
 		perror("fopen (comp_file)");
 		return -1;
@@ -522,9 +520,7 @@ int uncomp_file(char * input_fp, char * output_fp) {
 		return -1;
 	}
 
-	clear_file(output_fp);
-
-	FILE * out_writer = fopen(output_fp, "ab");
+	FILE * out_writer = fopen(output_fp, "wb");
 	if (out_writer == NULL) {
 		perror("fopen (uncomp_file)");
 		return -1;

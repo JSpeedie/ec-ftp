@@ -403,6 +403,8 @@ int do_get(int controlfd, int datafd, char *input) {
 	free(recv_fp);
 	/* CSCD58 end of addition - Compression + Encryption */
 
+	printf("File processed\n"); // TODO: remove
+
 	return 1;
 }
 
@@ -530,7 +532,8 @@ int do_put(int controlfd, int datafd, char *input) {
 		}
 	}
 
-	// TODO: remove temporary compressed file too?
+	/* Note that equivalent "KEEP" check for the temporary compressed
+	 * file is performed in prepare_file() */
 
 	/* Close open files */
 	fclose(in);

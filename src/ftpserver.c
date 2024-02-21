@@ -238,24 +238,32 @@ int do_retr(int controlfd, int datafd, char *input) {
 		}
 	}
 
+	fclose(in);
+
+	/* If there was an error receiving/processing the file */
 	if (err != 0) {
 		if (0 != remove(prepared_fp)) {
 			fprintf(stderr, "WARNING: could not remove temporary processed file!\n");
 		} 
+		/* Send error message to server */
+		sprintf(sendline, "451 Requested action aborted. Local error in processing\n");
+		write(controlfd, sendline, strlen(sendline));
+		return -1;
 	}
 
+	/* Send success message to server */
 	sprintf(sendline, "200 Command OK");
 	write(controlfd, sendline, strlen(sendline));
-	fclose(in);
 
 	/* CSCD58 addition - Compression */
 	if (KEEP_TEMP_ENC_FILES != 1) {
 		if (0 != remove(prepared_fp)) {
-			fprintf(stderr, "WARNING: could not remove temporary encrypted .enc file!\n");
+			fprintf(stderr, "WARNING: could not remove temporary prepared file!\n");
 		} 
 	}
 
-	// TODO: remove temporary compressed file too?
+	/* Note that equivalent "KEEP" check for the temporary compressed
+	 * file is performed in prepare_file() */
 
 	/* Free dynamically allocated memory */
 	free(prepared_fp);
@@ -271,8 +279,6 @@ int do_stor(int controlfd, int datafd, char *input) {
 	bzero(sendline, (int)sizeof(sendline));
 	bzero(recvline, (int)sizeof(recvline));
 	bzero(str, (int)sizeof(str));
-	// TODO: these variables need better names
-	int n = 0, p = 0;
 
 	/* CSCD58 addition - Encryption */
 	uint32_t key[4];
@@ -305,12 +311,10 @@ int do_stor(int controlfd, int datafd, char *input) {
 		return -1;
 	}
 
-	while ((n = read(datafd, recvline, MAXLINE)) > 0) {
-		// TODO: couldnt we clear the file and then open it in append mode to avoid this weird fseek call?
-		fseek(fp, p, SEEK_SET);
-		fwrite(recvline, 1, n, fp);
-		p = p + n;
-		//printf("%s", recvline);
+	int read_len = 0;
+
+	while ( (read_len = read(datafd, recvline, MAXLINE)) > 0) {
+		fwrite(recvline, 1, read_len, fp);
 		bzero(recvline, (int)sizeof(recvline));
 	}
 
@@ -378,9 +382,6 @@ int main(int argc, char **argv) {
 			perror("accept error");
 		/* New client connected successfully */
 		} else {
-			// TODO: not sure this prints the right address/port
-			fprintf(stdout, "Notice: Received a new client %s:%d!\n", \
-				inet_ntoa(address.sin_addr), ntohs(address.sin_port));
 			pid = fork();
 			if (pid < 0) {
 				perror("fork error");
@@ -388,6 +389,14 @@ int main(int argc, char **argv) {
 			//child process---------------------------------------------------------------
 			} else if (pid == 0) {
 				close(listenfd);
+
+				// TODO: not sure this prints the right address/port
+				fprintf(stderr, "(%d) ******************************\n" \
+								"(%d) STATUS: Received a new client %s:%d!\n", \
+								getpid(), getpid(), \
+								inet_ntoa(address.sin_addr), \
+								ntohs(address.sin_port));
+				fprintf(stderr, "(%d) ------------------------------\n", getpid());
 
 				int datafd, cmd, x = 0;
 				uint16_t client_port = 0;
@@ -404,8 +413,8 @@ int main(int argc, char **argv) {
 						break;
 					}
 
-					printf("(%d) *****************\n", getpid());
-					printf("(%d) %s\n", getpid(), recvline);
+					/* Print received FTP command */
+					fprintf(stderr, "(%d) %s\n", getpid(), recvline);
 
 					/* ... but they could send a QUIT command first so check
 					 * for that. */
@@ -421,7 +430,10 @@ int main(int argc, char **argv) {
 					/* If the command was not to quit, then assume it is a PORT
 					 * command */
 					read_port_command(recvline, &client_ip[0], &client_port);
-					printf("(%d) client_ip: %s client_port: %d\n", getpid(), client_ip, client_port);
+#if DEBUG_LEVEL >= 2
+	fprintf(stderr, "(%d) STATUS: client_ip: %s client_port: %d\n", \
+		getpid(), client_ip, client_port);
+#endif
 
 					/* Setup the data connection */
 					if (setup_data_connection(&datafd, client_ip, client_port, port) < 0) {
@@ -434,15 +446,40 @@ int main(int argc, char **argv) {
 						break;
 					}
 
-					printf("(%d) -----------------\n%s \n", getpid(), command);
+					/* Print received FTP command */
+					fprintf(stderr, "(%d) %s\n", getpid(), command);
 
 					cmd = get_command(command);
-					if(cmd == CMD_LS){
+					if (cmd == CMD_LS) {
+#if DEBUG_LEVEL >= 2
+						fprintf(stderr, "(%d) STATUS: beginning handling " \
+							"for client LIST request\n", getpid());
+#endif
 						do_list(client_fd, datafd, command);
-					}else if(cmd == CMD_GET){
+#if DEBUG_LEVEL >= 2
+						fprintf(stderr, "(%d) STATUS: finished handling " \
+							"client LIST request\n", getpid());
+#endif
+					} else if (cmd == CMD_GET) {
+#if DEBUG_LEVEL >= 2
+						fprintf(stderr, "(%d) STATUS: beginning handling " \
+							"for client RETR request\n", getpid());
+#endif
 						do_retr(client_fd, datafd, command);
-					}else if(cmd == CMD_PUT){
+#if DEBUG_LEVEL >= 2
+						fprintf(stderr, "(%d) STATUS: finished handling " \
+							"client RETR request\n", getpid());
+#endif
+					} else if (cmd == CMD_PUT) {
+#if DEBUG_LEVEL >= 2
+						fprintf(stderr, "(%d) STATUS: beginning handling " \
+							"for client STOR request\n", getpid());
+#endif
 						do_stor(client_fd, datafd, command);
+#if DEBUG_LEVEL >= 2
+						fprintf(stderr, "(%d) STATUS: finished handling " \
+							"client STOR request\n", getpid());
+#endif
 					// TODO: what's going on with this last 'else if'?
 					}else if(cmd == 4){
 						char reply[1024];
@@ -451,10 +488,13 @@ int main(int argc, char **argv) {
 					}
 					close(datafd);
 				}
-				// TODO: this print should almost certainly be removed
-				printf("(%d) Exiting Child Process...\n", getpid());
 				close(client_fd);
-				_exit(1);
+
+				fprintf(stderr, "(%d) Finished with client_ip: %s client_port: %d.\n" \
+								"(%d) ******************************\n", \
+								getpid(), client_ip, client_port, getpid());
+
+				exit(0);
 			}
 			//end child process-------------------------------------------------------------
 			close(client_fd);

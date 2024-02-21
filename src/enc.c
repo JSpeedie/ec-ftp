@@ -52,12 +52,6 @@ char * temp_encryption_name(char * filename) {
 }
 
 
-// TODO: what's going on here?
-void init_enc() {
-    printf("Init aes");
-    //initialize_aes_sbox(sbox, sboxinv);
-}
-
 /* Computes a^b mod c */
 uint64_t sq_mp(uint64_t a, uint64_t b, uint64_t c) {
     uint64_t r;
@@ -127,7 +121,7 @@ void *encrypt_chunk_of_file(void *arg) {
 	for (i = 0; (size_t) i < t->ir_readlen - num_stranded_bytes; i += 16) {
 		memcpy(text, &t->inbuf[i], 16);
 		to_column_order(text);
-		encrypt(text, t->rkeys, t->sbox);
+		encrypt(text, t->aes_vars->rkeys, t->aes_vars->sbox);
 		memcpy(&t->outbuf[i], text, 16);
 	}
 
@@ -151,7 +145,7 @@ void *encrypt_chunk_of_file(void *arg) {
 		t->outbuf_len += padnum;
 
 		to_column_order(text);
-		encrypt(text, t->rkeys, t->sbox);
+		encrypt(text, t->aes_vars->rkeys, t->aes_vars->sbox);
 		memcpy(&t->outbuf[i], text, 16);
 		t->padded = 1;
 	/* ED2b: If the last 16 byte chunk did not need padding, note that
@@ -174,9 +168,6 @@ void *encrypt_chunk_of_file(void *arg) {
 int enc_file(char *input_fp, char *output_fp, uint32_t key[4]) {
 	long max_bytes_per_batch = ENC_THREAD_MAX_MEM * ENC_MAX_THREADS;
     FILE *out_stream;
-    uint8_t rkeys[11][16];
-    uint8_t sbox[256];
-    uint8_t sboxinv[256];
 
 	struct stat s;
 	unsigned int num_batches = 1;
@@ -208,19 +199,17 @@ int enc_file(char *input_fp, char *output_fp, uint32_t key[4]) {
 		num_batches = (s.st_size / max_bytes_per_batch) + 1;
 	}
 
-    initialize_aes_sbox(sbox, sboxinv);
-
-	/* Empty the file first so that we can open the file in append mode */
-	clear_file(output_fp);
-
-	if ((out_stream = fopen(output_fp, "a")) == NULL) {
+	if ((out_stream = fopen(output_fp, "wb")) == NULL) {
 		return -1;
 	}
 
-    expkey(rkeys, key, sbox);
+	/* Fill in the enc_aes_vars struct which will be used for all threads */
+	struct enc_aes_vars avars;
+	initialize_aes_sbox(avars.sbox, avars.sboxinv);
+	expkey(avars.rkeys, key, avars.sbox);
 
 	char num_threads = ENC_MAX_THREADS;
-	EncThreadArgs args[num_threads];
+	struct enc_thread_args args[num_threads];
 	uint64_t batch_len;
 
 	/* Go through the input file in batches, breaking into threads for each
@@ -265,17 +254,8 @@ int enc_file(char *input_fp, char *output_fp, uint32_t key[4]) {
 				(batch_index * max_bytes_per_batch) \
 				+ (thread_index * ENC_THREAD_MAX_MEM), \
 				SEEK_SET);
-			/* STA3: Set the thread's 'rkeys' and 'sbox' */
-			// TODO: is there a way to do this using pointers (i.e. by reference)
-			// instead of manually copying the full arrays for each new thread?
-			for (int a = 0; a < 11; a++) {
-				for (int b = 0; b < 16; b++) {
-					args[thread_index].rkeys[a][b] = rkeys[a][b];
-				}
-			}
-			for (int c = 0; c < 256; c++) {
-				args[thread_index].sbox[c] = sbox[c];
-			}
+			/* STA3: Set the thread's AES vars */
+			args[thread_index].aes_vars = &avars;
 
 			/* STA4: Set the number of bytes (the read length) each input
 			 * reader must read ('ir_readlen'), allocate memory for reading
@@ -297,7 +277,7 @@ int enc_file(char *input_fp, char *output_fp, uint32_t key[4]) {
 				/* Make sure outbuf length is rounded up to a multiple of 16
 				 * to ensure that there is room for internal padding */
 				int num_stranded_bytes = args[thread_index].ir_readlen % 16;
-				int alloc_len = 0;
+				long alloc_len = 0;
 				args[thread_index].outbuf_len = args[thread_index].ir_readlen;
 
 				/* Allocate for 'outbuf' either 'ir_readlen' bytes
@@ -308,7 +288,7 @@ int enc_file(char *input_fp, char *output_fp, uint32_t key[4]) {
 				args[thread_index].outbuf = malloc(alloc_len);
 				if (args[thread_index].outbuf == NULL) {
 					fprintf(stderr, "ERROR: could not allocate output buffer "\
-						"(asked for %ld bytes)\n", args[thread_index].outbuf_len);
+						"(asked for %ld bytes)\n", alloc_len);
 					return -1;
 				}
 			} else {
@@ -380,7 +360,7 @@ int enc_file(char *input_fp, char *output_fp, uint32_t key[4]) {
 						text[j] = 16;
 					}
 
-					encrypt(text, rkeys, sbox);
+					encrypt(text, args[t].aes_vars->rkeys, args[t].aes_vars->sbox);
 
 					if (1 != \
 						/* Write the padding chunk */
@@ -413,84 +393,269 @@ int enc_file(char *input_fp, char *output_fp, uint32_t key[4]) {
 }
 
 
-int dec_file(char *input_fp, char *output_fp, uint32_t key[4]) {
-    FILE *in_stream;
-    FILE *out_stream;
-    size_t read_len;
-    size_t read_len_prev;
-    char *readbuf = malloc(ENC_THREAD_MAX_MEM + 1);
-    char *writebuf = malloc(ENC_THREAD_MAX_MEM + 1);
-    uint8_t sbox[256];
-    uint8_t sboxinv[256];
+void *decrypt_chunk_of_file(void *arg) {
+	/* {{{ */
+#if DEBUG_LEVEL >= 2
+	fprintf(stderr, "(%d) STATUS: decryption: thread %ld starting...\n", \
+		getpid(), syscall(SYS_gettid));
+#endif
+	struct enc_thread_args *t = (struct enc_thread_args *) arg;
+
+	/* 1. Read the assigned number of bytes from the given (and already
+	 * positioned) file stream */
+	if (0 != read_bytes(&t->inbuf[0], t->ir_readlen, t->input_reader)) {
+		fprintf(stderr, "ERROR: thread couldn't read assigned number of bytes from given input file stream\n");
+		t->return_val = -1;
+		return NULL;
+	}
+
+	/* 2. DD: Decrypt the Data. Decrypt the data in 't->inbuf' and put in
+	 * 't->outbuf' */
+	int num_stranded_bytes = t->ir_readlen % 16;
     uint8_t text[16];
-    uint8_t rkeys[11][16];
-    int i;
-    int padrm = 0;
-    int first = 1;
+	/* DD1: Loop through the read bytes in 16 byte chunks, decrypting each chunk and
+	 * storing the results to a write buffer */
+	for (int i = 0; (size_t) i < t->ir_readlen - num_stranded_bytes; i += 16) {
+		memcpy(text, &t->inbuf[i], 16);
+		decrypt(text, t->aes_vars->rkeys, t->aes_vars->sboxinv);
+		to_row_order(text);
+		memcpy(&t->outbuf[i], text, 16);
+		/* DD2: Trim decrypted data if the data is padded and we are on
+		 * the last chunk */
+		if (t->padded == 1 && (size_t) i == t->ir_readlen - 16) {
+			unsigned char num_pad_bytes = t->outbuf[t->ir_readlen - 1];
+			t->outbuf_len = t->ir_readlen - num_pad_bytes;
+		}
+	}
 
-    initialize_aes_sbox(sbox, sboxinv);
+#if DEBUG_LEVEL >= 2
+	fprintf(stderr, "(%d) STATUS: decryption: thread %ld finished successfully\n", \
+		getpid(), syscall(SYS_gettid));
+#endif
 
-	if ((in_stream = fopen(input_fp, "rb")) == NULL) {
+	t->return_val = 0;
+	return NULL;
+	/* }}} */
+}
+
+
+int dec_file(char *input_fp, char *output_fp, uint32_t key[4]) {
+	long max_bytes_per_batch = ENC_THREAD_MAX_MEM * ENC_MAX_THREADS;
+	FILE *out_stream;
+
+	struct stat s;
+	unsigned int num_batches = 1;
+	stat(input_fp, &s);
+
+
+#if DEBUG_LEVEL >= 1
+	/* Print warning if the file will require more than one thread */
+	if (s.st_size > ENC_THREAD_MAX_MEM) {
+		fprintf(stderr, "(%d) WARNING: decryption: File size is bigger than " \
+			"the memory limit for one decryption thread (%ld > %d bytes). " \
+			"The file will be decrypted across multiple threads.\n", \
+			getpid(), s.st_size, ENC_THREAD_MAX_MEM);
+	}
+#endif
+
+	/* If the size of the file is too large for all its data to be loaded into
+	 * memory and decrypted in one batch of threads */
+	if (s.st_size > max_bytes_per_batch) {
+#if DEBUG_LEVEL >= 1
+	/* Print warning if the file will require more than one batch of threads */
+	fprintf(stderr, "(%d) WARNING: decryption: File size is bigger than " \
+		"the memory limit for one threaded decryption batch " \
+		"(%ld > %ld bytes). The file will be decrypted over multiple " \
+		"multithreaded batches.\n", \
+		getpid(), s.st_size, max_bytes_per_batch);
+#endif
+		/* "Ceiled" division so that the number of jobs is always sufficient
+		 * to decrypt the whole file */
+		num_batches = (s.st_size / max_bytes_per_batch) + 1;
+	}
+
+	if ((out_stream = fopen(output_fp, "wb")) == NULL) {
 		return -1;
 	}
 
-	/* Empty the file first so that we can open the file in append mode */
-	clear_file(output_fp);
+	/* Fill in the enc_aes_vars struct which will be used for all threads */
+	struct enc_aes_vars avars;
+	initialize_aes_sbox(avars.sbox, avars.sboxinv);
+	expkey(avars.rkeys, key, avars.sbox);
 
-	if ((out_stream = fopen(output_fp, "a")) == NULL) {
-		return -1;
-	}
-
-	expkey(rkeys, key, sbox);
+	char num_threads = ENC_MAX_THREADS;
+	struct enc_thread_args args[num_threads];
+	uint64_t batch_len;
 
 	/* Read ENC_THREAD_MAX_MEM bytes from the file, decrypting in 16 byte chunks */
-	while (0 != (read_len = fread(readbuf, 1, ENC_THREAD_MAX_MEM, in_stream)) ) {
-		if (!first) {
-			/* Write the decrypted data from the previous iteration */
-			fwrite(writebuf, 1, read_len_prev, out_stream);
+	/* Go through the input file in batches, breaking into threads for each
+	 * batch, each thread decrypting an assigned part of the file before
+	 * pthread_join'ing back to the main thread, which will then loop through
+	 * the encryped data, writing it (or the raw data if it takes up less
+	 * space) to the output file. This all takes place in 3 broad stages:
+	 * STA: Set Thread Arguments
+	 * RT: Run Threads
+	 * MUTW: Make use of the Threads' Work */
+	for (unsigned int batch_index = 0; batch_index < num_batches; batch_index++) {
+		/* If this is not the last batch, read a batch of maximum length with
+		 * the maximum number of threads */
+		if (batch_index != num_batches - 1) {
+			batch_len = max_bytes_per_batch;
+			num_threads = ENC_MAX_THREADS;
 		} else {
-			first = 0;
+			/* Set the number of threads to how many 'ENC_THREAD_MAX_MEM' byte
+			 * chunks of the file are left */
+			batch_len = s.st_size - (batch_index * max_bytes_per_batch);
+			num_threads = (batch_len / ENC_THREAD_MAX_MEM) + 1;
 		}
 
-		int num_stranded_bytes = read_len % 16;
+#if DEBUG_LEVEL >= 1
+	fprintf(stderr, "(%d) STATUS: decryption: batch (%d/%d) has %d threads\n", \
+		getpid(), batch_index + 1, num_batches, num_threads);
+#endif
 
-		for (i = 0; i < read_len - num_stranded_bytes; i += 16) {
-			memcpy(text, &readbuf[i], 16);
-			decrypt(text, rkeys, sboxinv);
-			to_row_order(text);
-			memcpy(&writebuf[i], text, 16);
-		}
+		/* STA: Set Thread Arguments */
 
-		if (read_len < ENC_THREAD_MAX_MEM) {
-			if (num_stranded_bytes == 0) {
-				/* All padding bytes redundantly store the total number of
-				 * padding bytes. We can simply read the last byte to determine
-				 * how many padding bytes there are... */
-				int padnum = writebuf[i - 1];
-				/* ... and write the stretch of data - the number of padding
-				 * bytes to the output file*/
-				fwrite(writebuf, 1, read_len - padnum, out_stream);
-				padrm = 1;
-				break;
+		/* STA1: Open up the input file with 'num_batches' readers, each at their
+		* starting location for the reading they have to do */
+		for (int thread_index = 0; thread_index < num_threads; thread_index++) {
+			args[thread_index].input_reader = fopen(input_fp, "rb");
+			if (args[thread_index].input_reader == NULL) {
+				perror("fopen (dec_file)");
+				return -1;
+			}
+			/* STA2: Position the cursor of each reader such that it will
+			 * read at the part of the file it is responsible for reading */
+			fseek(args[thread_index].input_reader, \
+				(batch_index * max_bytes_per_batch) \
+				+ (thread_index * ENC_THREAD_MAX_MEM), \
+				SEEK_SET);
+			/* STA3: Set the thread's AES vars */
+			args[thread_index].aes_vars = &avars;
+
+			/* STA4: Set the number of bytes (the read length) each input
+			 * reader must read ('ir_readlen'), allocate memory for reading
+			 * from the file, set the number of bytes in the out buffer
+			 * ('outbuf_len'), and allocate memory for the out buffer */
+			/* If this is the last thread in the last batch, do not blindly
+			 * read the maximum amount, but only what is left to read */
+			if (batch_index == num_batches - 1 && thread_index == num_threads - 1) {
+				args[thread_index].ir_readlen = \
+					s.st_size \
+					- (batch_index * max_bytes_per_batch) \
+					- (thread_index * ENC_THREAD_MAX_MEM); // If this is the last thread, read only the remaining bytes of the file
+				args[thread_index].inbuf = malloc(args[thread_index].ir_readlen);
+				if (args[thread_index].inbuf == NULL) {
+					fprintf(stderr, "ERROR: could not allocate input buffer "\
+						"(asked for %ld bytes)\n", args[thread_index].ir_readlen);
+					return -1;
+				}
+				/* Outbuf will be >= inbuf length when decrypting, so
+				 * simply allocate inbuf length for outbuf */
+				args[thread_index].outbuf_len = args[thread_index].ir_readlen;
+				args[thread_index].outbuf = malloc(args[thread_index].outbuf_len);
+				if (args[thread_index].outbuf == NULL) {
+					fprintf(stderr, "ERROR: could not allocate output buffer "\
+						"(asked for %ld bytes)\n", args[thread_index].outbuf_len);
+					return -1;
+				}
+				/* If this is the last thread of the last batch, we need
+				 * to remove the padding */
+				args[thread_index].padded = 1;
 			} else {
-				return -1; /* Input should always be a multiple of the block size. */
+				args[thread_index].ir_readlen = ENC_THREAD_MAX_MEM;
+				args[thread_index].inbuf = malloc(ENC_THREAD_MAX_MEM);
+				if (args[thread_index].inbuf == NULL) {
+					fprintf(stderr, "ERROR: could not allocate input buffer "\
+						"(asked for %d bytes)\n", ENC_THREAD_MAX_MEM);
+					return -1;
+				}
+				size_t max_outbuf_len = ENC_THREAD_MAX_MEM;
+				args[thread_index].outbuf_len = max_outbuf_len;
+				args[thread_index].outbuf = malloc(max_outbuf_len);
+				if (args[thread_index].outbuf == NULL) {
+					fprintf(stderr, "ERROR: could not allocate output buffer "\
+						"(asked for %ld bytes)\n", max_outbuf_len);
+					return -1;
+				}
+				/* Since this is NOT the last thread of the last batch, there
+				 * is no need to remove padding */
+				args[thread_index].padded = 0;
 			}
 		}
 
-		read_len_prev = read_len;
+		/* RT: Run Threads */
+		pthread_t thread_id[num_threads];
+		/* RT1: Create threads with their given tasks/arguments */
+		for (int t = 0; t < num_threads - 1; t++) {
+			if (0 != \
+				pthread_create(&thread_id[t], NULL, decrypt_chunk_of_file, &args[t])) {
+
+				fprintf(stderr, "ERROR: Could not create threads\n");
+				return -1;
+			}
+		}
+		/* RT2: Have this "thread" decrypt as well since otherwise it would be
+		 * waiting idly */
+		decrypt_chunk_of_file(&args[num_threads - 1]);
+		if (args[num_threads - 1].return_val != 0) {
+			fprintf(stderr, "ERROR: thread failed to decrypt assigned chunk\n");
+			return -1;
+		}
+
+		/* RT3: Wait for all the threads to finish their decryption */
+		for (int t = 0; t < num_threads - 1; t++) {
+			pthread_join(thread_id[t], NULL);
+			if (args[t].return_val != 0) {
+				fprintf(stderr, "ERROR: thread failed to decrypt assigned chunk\n");
+				return -1;
+			}
+		}
+
+		/* MUTW: Make use of the Threads' Work */
+		for (int t = 0; t < num_threads; t++) {
+			/* MUTW1: Write the decrypted data in 'outbuf' to the output file */
+			if (1 != \
+				/* Write the outbuf to the output file */
+				fwrite(args[t].outbuf, args[t].outbuf_len, 1, out_stream)) {
+
+				fprintf(stderr, "ERROR: Could not write data content output file\n");
+				return -1;
+			}
+			/* /1* MUTW2: If this is the thread working on the data right at the */
+			/*  * end of the input file, handle padding *1/ */
+			/* if (batch_index == num_batches - 1 && t == num_threads - 1) { */
+			/* 	// TODO: handle chunk padding? */
+			/* 	/1* If the final chunk is not already internally padded, add a */
+			/* 	 * padding chunk *1/ */
+			/* 	if (args[t].padded != 1) { */
+			/* 		uint8_t text[16]; */
+
+			/* 		for (int j = 0; j < 16; j++) { */
+			/* 			text[j] = 16; */
+			/* 		} */
+
+			/* 		decrypt(text, args[t].aes_vars->rkeys, args[t].aes_vars->sbox); */
+
+			/* 		if (1 != \ */
+			/* 			/1* Write the padding chunk *1/ */
+			/* 			fwrite(&text[0], 16, 1, out_stream)) { */
+
+			/* 			fprintf(stderr, "ERROR: Could not write data content output file\n"); */
+			/* 			return -1; */
+			/* 		} */
+			/* 	} */
+			/* } */
+
+			/* Free dynamically alloc'd buffers */
+			free(args[t].inbuf);
+			free(args[t].outbuf);
+			/* Close open file streams */
+			fclose(args[t].input_reader);
+		}
+	
 	}
 
-	if (!padrm) {
-		// TODO: what is going on here? Is this code ever executed?
-		// the break condition for the loop above is when read_len = 0, so
-		// wouldn't the code below do nothing even if this was reached?
-		// TODO: this code mightve been fucked over by me changing
-		// out_stream to be opened in append mode
-		int padnum = writebuf[i - 1];
-		fwrite(writebuf, 1, read_len - padnum, out_stream);
-	}
-
-	fclose(in_stream);
 	fclose(out_stream);
 
 	return 0;
