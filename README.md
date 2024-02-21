@@ -480,13 +480,14 @@ may or may not require uncompressing. This can be checked by looking at the
 compressed field of the preceding EC header.
 ```
 
-The EC header and its particular contents are necessary for 2 reasons. First,
+The EC header and its particular contents are necessary for 3 reasons. First,
 any compression algorithm will not always return a data stream that is smaller
 than the stream of original data. In those cases, it's better to send the
 original data than data that not only takes more space but must also be
 uncompressed upon receiving it. Second, it's more efficient to send the size of
 the original data chunk (a number we know from when we compressed the data
-chunk) and allocate precisely enough space to uncompress than it is to allocate
-generously, or to resize allocation in order to make room for uncompressed
-data. Lastly, we need to know the size of the processed data if we are to
-locate the need EC header in the file.
+chunk) and allocate precisely enough space for decompressing the data than it
+is to allocate generously and waste memory, or to allocate conservatively and
+resize as needed. Lastly, we need to know the size of the processed data if we
+are to locate the next EC header in the file, and so EC headers store
+`proc_size`.

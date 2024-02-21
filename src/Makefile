@@ -2,6 +2,7 @@
 LIBS = -lpthread
 CFLAGS = -Wall
 CC = gcc -g
+D_LEVEL = 2
 # CC = gcc
 
 # For more information on 'patsubst' and the possibly-difficult-to-understand
@@ -70,7 +71,7 @@ lzma: $(LZMAOBJ)
 csshareddep: $(DEP)
 
 .PHONY: debug
-debug: DEBUG = -DDEBUG_LEVEL=2
+debug: DEBUG = -DDEBUG_LEVEL=$(D_LEVEL)
 debug: compile
 
 # ==================================================
