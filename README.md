@@ -1,33 +1,119 @@
 # ec-ftp
 
-## Motivation
+## Technical Description
 
-### Why add encryption?
+This repo contains a partial C implementation of FTP (as specified in [RFC
+959](https://www.ietf.org/rfc/rfc959.txt)) extended such that transferred data
+is both compressed and encrypted.
 
-Last year Chrome and Firefox disabled support for FTP over security concerns
-(see for instance
-[https://chromestatus.com/feature/6246151319715840](https://chromestatus.com/feature/6246151319715840))
-since it is entirely unencrypted (it has no security measures at all!) and
-prone to a variety of attacks. We wanted to make our own modern file transfer
-protocol that is secure!
-
-### Why add compression?
-
-When a file is transmitted over a network, there is a good chance that many
-elements are involved in the file's journey. By using a high compression ratio
-compression algorithm (such as the Lempel–Ziv–Markov chain algorithm (LZMA),
-used in this project) and compressing the file before sending, we can reduce
-the work for the network elements, potentially creating a favourable
-distribution of costs.
+![Imgur](https://imgur.com/oyjYZ36.gif)
 
 
-## Description
+## Purpose
 
-This project is a client/server program pair that implements FTP with 2
-extensions: encryption, and compression. For this reason it is referred to as
-`ec-ftp`.
+To add encryption and compression to FTP to improve security and reduce network
+strain. FTP is no longer supported by Firefox (since July 2021) and Chrome
+(since January 2021) because of security concerns, and since FTP might send a large
+file over a long network path, compressing the file first may reduce the load
+faced by routers, switches, and other network elements.
 
-### Details about the underlying FTP implementation
+
+## Elements of Note
+
+* Multithreading
+    * When compressing a file, decompressing a file, encrypting a file and
+      decrypting a file, the program performing the process will break into
+      threads in order to finish the task faster.
+* Network communication
+    * This repo contains both a server and client which communicate over
+      both a data and control connection.
+* Efficient and well-featured Makefile
+    * More than compiling in an organized way (such as placing objects files in
+      `obj/` subdirectories to prevent recompiling them neeedlessly, while
+      still keeping the working directory clear), the Makefile also includes a
+      `debug` rule for compiling the server and client such that they will
+      output debug information when run.
+* This project has a [wiki](https://github.com/JSpeedie/ec-ftp/wiki) which
+  documents the various file formats used by the executables, their process
+  flows, and walkthroughs and tests.
+
+
+## Installation, Compilation and Running
+
+### Installation
+
+```bash
+# If you want to push to the repo
+git clone git@github.com:JSpeedie/ec-ftp.git ec-ftpGit
+# If you are just installing
+git clone https://www.github.com/JSpeedie/ec-ftp ec-ftpGit
+cd ec-ftpGit/
+```
+
+### Compilation
+
+First you will need to compile the project. You can do this by running the
+following commands:
+
+```bash
+cd ec-ftpGit/
+cd src/
+# If you want a standard compilation
+make
+# If you want to compile the binaries to output debug information
+make debug
+```
+
+This will compile both the `ftpclient` and `ftpserver` binaries placing them in
+`ec-ftp/bin/ftpclient/` and
+`ec-ftp/bin/ftpserver/`, respectively.
+
+### Running the code
+
+In one terminal, start the server:
+
+```
+cd ec-ftpGit/
+cd bin/ftpserver/
+./ftpserver <listen-port>
+```
+
+For example:
+
+```
+./ftpserver 45678
+```
+
+In another terminal, start the client:
+
+```
+cd ec-ftpGit/
+cd bin/ftpclient/
+./ftpclient <server-ip> <server-listen-port>
+```
+
+For example: (make sure you run the server first)
+
+```
+./ftpclient 127.0.0.1 45678
+```
+
+If your `ftpclient` says its connection was denied, make sure you entered the
+same port for both your `ftpserver` and `ftpclient`. If you did, try a
+different port.
+
+You will interface with the server through the client, you cannot run any
+commands on the server side, but you will see some output that might be helpful.
+
+#### Client Interface Commands
+
+- ls, lists the current directory
+- get <filename>, gets the file from server to client.
+- put <filename>, puts the files from the client to the server.
+- quit, exits the client program
+
+
+## Details about the underlying FTP implementation
 
 RFC959 was used as the reference specifications for this project:
 
@@ -58,64 +144,23 @@ LIST
 ```
 
 
-### Process Flow
-
-The way this extends FTP is as follows:
-1. The client issues a RETR command to the server to retrieve a file (or 
-   a STOR command to send a file to the server - either way, one party will
-   receive a file that the other party will send).
-2. The sender takes the original file and compresses it into our own file
-   format (`.comp`) creating a temp file for the new file to avoid overwriting
-   other files (`[filename].comp-XXXXXX` where XXXXXX are random digits
-   generated by `mkstemp()`).
-3. The sender then takes that temporary `.comp` file and encrypts it, adding
-   the `.enc` extension creating a temp file for the new file to avoid
-   overwriting other files (`[filename].comp.enc-XXXXXX` where XXXXXX are
-   random digits generated by `mkstemp()`).
-4. The sender sends this temporary `.comp.enc` file to the receiver, who
-   creates their own temp file to receive it (`[filename].comp.enc-XXXXXX`).
-5. The receiver then decrypts the file, creating a temp file for the decrypted
-   file (`[filename].comp-XXXXXX`, which still has to be uncompressed).
-6. The receiver then uncompresses the file, leaving them with the original
-   file!
-
-
-## Contributions + Analysis + Discussion
+## Contributions
 
 ### Julian Speedie
 
 Julian made the small fixes to the original FTP client/server program pair to
 get it to work with all types of files, worked on the compression part of the
-project, and cleaned up and documented the code base. Most of the compression
-work can be found in `comp.c`, `comp.h`, as well as the compression-related
-changes made in `do_put()`, `do_get()` of `src/ftpclient.c` and in `do_retr()`,
-`do_stor()` of `src/ftpserver.c`, but code involving the use of temporary files
-is also a part of that work.
-
-Of note was the work on a custom file format needed for the proper transfer of
-files from client to server or vice versa. This format - which is used for files
-that end in `.comp` (which hopefully you will never see since they are meant to
-be temporary) is described in the section on file formats.
-
-The main takeaway I have after implementing compression like this is the
-question of whether or not compression should be implemented at the application
-layer. For one, maybe we should save the compressed file instead of compressing
-with each request so that we don't incur needless repeated compression, a
-process that is costly in terms of time and cpu usage. Problems arise there
-however as the server then has to have some way to be sure that its collection
-of associated compressed files are indeed compressed versions of the original
-files. What if someone deletes the original file, or changes it, when will the
-compressed version be updated? Solutions exist to all these potential problems,
-but we could not make such a system due to the limits of the project. The
-second problem with implementing compression at the application layer is that
-it costs the sender a lot of time and cpu usage (as well as the receiver who
-has to uncompress at the end) and doesn't save much in the way of resources
-(comparatively) for the network. Big files that may benefit to a noticeable
-degree from compression could easily take far longer to compress than they
-would've taken to send over the network. And that's not even counting the time
-it would take to decompress them. Thus, unless your network is extremely
-burdened while your server and client are also relatively unburdened, it simply
-does not make sense to compress data as part of a protocol.
+project, cleaned up and documented the code base, rewrote the Makefile, wrote
+the wiki, and wrote the multithreading code for compression, decompressiong,
+encryption, and decryption. Most of the compression work can be found in
+`comp.c`, as well as the compression-related changes made in `do_put()`,
+`do_get()` of `src/ftpclient.c` and in `do_retr()`, `do_stor()` of
+`src/ftpserver.c`, but other related work can be found in
+`process_received_file()`, `prepare_file()` in `ec-ftp.c`. Multithreading work
+can be found in `compress_chunk_of_file()`, `uncompress_chunk_of_file()`,
+`comp_file()` and `uncomp_file()` in `comp.c`, as well as in
+`encrypt_chunk_of_file()`, `enc_file()`, `decrypt_chunk_of_file()`, and
+`dec_file()` in `enc.c`.
 
 
 ### Dawson Brown
@@ -128,8 +173,8 @@ using ECB mode. `enc.c` includes methods for encrypting and decrypting files
 using the aes code, as well as an implementation of the square and multiply
 algorithm for calculating the power of large values mod n.
 
-When performing the put or get operations, the client and server first
-intialize a key exchange using the diffie-hellman algorithm. This takes place
+When performing the STOR or RETR operations, the client and server first
+intialize a key exchange using the Diffie-Hellman algorithm. This takes place
 in 4 stages, each stage exchanging a random 32-bit integer, resulting in four
 32-bit integers which are passed into the encryption and decryption functions
 as a key. A unique key is generated for every file exchange. This is done using
@@ -152,7 +197,7 @@ the end of the file is buffered with up to 16 bytes, where the data is equal to
 the number of buffer bytes (i.e. if a file were 19 bytes, a 13 byte buffer
 would be used where each byte has value 13). If the file is already a multiple
 of the block size, it is buffered with 16 bytes regardless. This means the
-receiver can remove the buffere data simply by removing a number of characters
+receiver can remove the padded data simply by removing a number of characters
 equal to the value of the last byte of data.
 
 DISCLAIMER: Since this is a minimal implementation, it carries many security
@@ -173,140 +218,6 @@ implementation does not defend against. While the implementation is ultimately
 suitable for our needs and does provide a level of encryption, it should not be
 considered secure in any production environment.
 
-
-## How to run and test
-
-### Compilation
-
-First you will need to compile the project. You can do this by running the
-following commands:
-
-```bash
-cd ec-ftp/
-cd src/
-make
-# Replace the previous make command with the following one
-# for binaries that provide debugging output
-make debug
-```
-
-This will compile both the `ftpclient` and `ftpserver` binaries placing them in
-`ec-ftp/bin/ftpclient/` and
-`ec-ftp/bin/ftpserver/`, respectively.
-
-### Running the code
-
-In one terminal, start the server:
-```
-cd ec-ftp/
-cd bin/ftpserver/
-./ftpserver <listen-port>
-```
-For example:
-```
-./ftpserver 45678
-```
-
-In another terminal, start the client:
-```
-cd ec-ftp/
-cd bin/ftpclient/
-./ftpclient <server-ip> <server-listen-port>
-```
-For example: (make sure you run the server first)
-```
-./ftpclient 127.0.0.1 45678
-```
-If your ftpclient says its connection was denied, make sure you entered the same
-port for both your ftpserver and ftpclient. If you did, try a different port.
-
-You will interface with the server through the client, you cannot run any
-commands on the server side, but you will see some output that might be helpful.
-
-#### Client Interface Commands
-
-- ls, lists the current directory
-- get <filename>, gets the file from server to client.
-- put <filename>, puts the files from the client to the server.
-- quit, exits the client program
-
-### Tests
-
-To test, you want to setup 2 terminals as described in the "Running the code"
-section, and also you may need to copy a variety of files into both your
-`ec-ftp/bin/ftpserver/` directory (for the client to access)
-and into your `ec-ftp/bin/ftpserver/` directory (for the
-client to put) (we provide some in the zip that we submitted, but feel free to
-test with more). Once you've done that, feel free to begin any of the following
-tests:
-
-#### 1. Client GET/Server RETR
-
-1. From your `ftpclient` terminal, type `ls` at the `ftpclient` prompt and hit
-   enter to see what files the server has.
-2. To retrieve a file from the server, type `get <filename>` and wait to
-   receive the file.
-3. It should appear (byte for byte identical to the original on the server, in
-   content and name) in your `ec-ftp/bin/ftpclient` directory!
-
-#### 2. Client PUT/Server STOR
-
-1. If you are running the `ftpclient`, press Ctrl+C to kill the process. From
-   your `ec-ftp/bin/ftpclient` directory, run the shell
-   command `ls` to see what files your client has access to. Then startup the
-   client again with the command: `./ftpclient <server-ip>
-   <server-listen-port>`
-2. From your `ftpclient` terminal, type `ls` at the prompt and hit enter to see
-   what files the server has (we don't want to overwrite any of them!)
-3. To put a file from the server, type `get <local-filename>` (where
-   `<local-filename>` is  one of the filenames printed by the shell command
-   `ls` in step 1) and wait to receive the file.
-4. It should appear (byte for byte identical to the original on the server, in
-   content and name) in your `ec-ftp/bin/ftpclient` directory!
-
-#### 3. Seeing the .enc and .comp files
-1. Press Ctrl+C in both your `ftpclient` terminal and your `ftpserver` terminal
-   if they are running.
-1. Edit `src/ec-ftp.h` and change `KEEP_TEMP_ENC_FILES` to `1` and
-   `KEEP_TEMP_COMP_FILES` to `1` as well.
-2. Now compile the project again (`cd src` followed by `make`), and start
-   `ftpserver` in one terminal and `ftpclient` in another as explained
-   in the "Running the code" above.
-3. Now when you PUT or GET (from the `ftpclient` prompt:`put <filename>` or
-   `get <filename>, respectively) a file, the temporary .comp-XXXXXX and
-   .comp.enc-XXXXXX files on both the server and client won't be cleaned up so
-   you can see them!
-
-#### 4. Seeing packet activity on Wireshark
-1. Open up wireshark and select "Loopback: lo" as the interface you want to
-   capture on
-2. In the filter bar, type "tcp"
-3. From your ftpclient terminal (assuming you are running an `ftpserver` in one
-   terminal and have a connected `ftpclient` in another), type `ls` at the
-   `ftpclient` prompt and hit enter.
-4. You should see a sudden burst of about 20-30 packets that represent that
-   request and its response by the server.
-5. Similarly, at the `ftpclient` prompt we can request a file from the server
-   with `get <filename>` (make sure you have put a file for testing in your
-   `bin/ftpserver/` directory!). If we look at Wireshark, we should first see a
-   20-30 packet burst from the original request, followed by a brief pause as
-   the server compresses the requested file, then encrypts it. Following that
-   pause, we should see many (depends on the filesize) packets being sent (this
-   is the file being transferred over the network), then another pause as the
-   receiver decrypts and then uncompresses the file at which point we see one
-   last tiny set of packets which are the receiver telling the sender they
-   received the file successfully.
-
-
-*NOTE: The server program will keep running even after a client has been
-disconnected, waiting for future connections*
-
-*NOTE: The provided client and server utilities can only access files within
-the directories containing the executables, ls however, can list the contents
-of directories contained within.*
-
-
-![Imgur](https://imgur.com/oyjYZ36.gif)
 
 ## Acknowledgements
 
@@ -334,9 +245,9 @@ project depends on was provided by this public domain SDK. All the files in
 Several minor contributions came from Wikipedia. Specifically, the `ROTC` definition, 
 as well as the `initialize_aes_sbox()` and `g_mul()` functions, all in `aes.c`.
 
-### 4. Us! The CSCD58 students who worked on this project!
+### 4. The CSCD58 students who worked on this project
 
-Collectively we made the following files:
+Collectively Julian Speedie and Dawson Brown made the following files:
 
 ```
 aes.c
@@ -358,7 +269,7 @@ ftpserver.c
 
 ### 5. Julian Speedie, continuing work on this project
 
-After submission, Julian continued to work on the project, redoing the Makefile,
+After submission Julian continued to work on the project, redoing the Makefile,
 making large changes to...
 
 ```
@@ -383,111 +294,3 @@ increase readability of the code was done in...
 ftpclient.c
 ftpserver.c
 ```
-
-
-## File formats
-
-### Encryption
-
-```
-.enc file structure:
-
-+------------------------+     +------------------------+
-| encrypted data chunk 1 | ... | encrypted data chunk n |
-|               16 bytes |     |               16 bytes |
-+------------------------+     +------------------------+
-```
-
-where...
-
-```
-encrypted data chunks 1 - (n-1) structure:
-
-+----------+
-| data     |
-| 16 bytes |
-+----------+
-
-data: data from the file, encrypted in a 16 byte chunk.
-```
-
-and ...
-
-```
-final encrypted data chunk n structure:
-
-+--------------------------+----------------------------------+
-| data                     |  padding bytes                   |
-| (file length % 16) bytes |  (16 - (file length % 16)) bytes |
-+--------------------------+----------------------------------+
-
-data: data from the file. This data will be encrypted as a 16 byte chunk that
-      includes both this data and the padding bytes.
-padding bytes: a series of redundant bytes used to pad the encrypted output to
-               a size that is a multiple of 16 bytes. Each padding byte
-               indiviually stores a value representing the number of padding
-               bytes in this chunk. If the file length is already a multiple of
-               16 then a new 16 byte chunk made exclusively of padding bytes is
-               added.
-```
-
-This gives us 2 important guarantees. First, we know that all encrypted data
-will have a size that is a multiple of 16. Second, we know that the last
-byte of the last chunk will contain the number of padding bytes that need
-to be stripped off.
-
-
-### Compression
-
-```
-.comp file structure:
-
-+-------------+------------------+     +-------------+------------------+
-| EC header 1 | processed data 1 | ... | EC header n | processed data n |
-+-------------+------------------+     +-------------+------------------+
-```
-
-where...
-
-```
-EC header structure:
-
-+------------+-----------------------+----------------------+
-| compressed |  orig_size            | proc_size            |
-|     1 byte |  sizeof(size_t) bytes | sizeof(size_t) bytes |
-+------------+-----------------------+----------------------+
-
-compressed: a (signed) char representing whether the data in the data chunk is
-            raw and unchanged (=0) or LZMA compressed (=1).
-orig_size: a size_t representing the length (in bytes) of the data when it is
-           uncompressed. This field is not set if the compressed field == 0.
-proc_size: a size_t representing the length (in bytes) of the data in the data
-           chunk of this block.
-```
-
-and...
-
-```
-processed data structure:
-
-+--------+     +--------+
-| data 1 | ... | data n |
-| 1 byte |     | 1 byte |
-+--------+     +--------+
-
-where n = proc_size as specified in the preceding EC header. The processed data
-may or may not require uncompressing. This can be checked by looking at the
-compressed field of the preceding EC header.
-```
-
-The EC header and its particular contents are necessary for 3 reasons. First,
-any compression algorithm will not always return a data stream that is smaller
-than the stream of original data. In those cases, it's better to send the
-original data than data that not only takes more space but must also be
-uncompressed upon receiving it. Second, it's more efficient to send the size of
-the original data chunk (a number we know from when we compressed the data
-chunk) and allocate precisely enough space for decompressing the data than it
-is to allocate generously and waste memory, or to allocate conservatively and
-resize as needed. Lastly, we need to know the size of the processed data if we
-are to locate the next EC header in the file, and so EC headers store
-`proc_size`.
