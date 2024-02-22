@@ -12,7 +12,7 @@
 
 #include "comp.h"
 #include "enc.h"
-#include "ec-ftp.h"
+#include "ecftp.h"
 
 
 #if DEBUG_LEVEL >= 2

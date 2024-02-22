@@ -37,7 +37,7 @@ _LZMAOBJ = $(patsubst %.c,%.o,$(_LZMASRC))
 # }}}
 LZMAOBJ = $(patsubst %.c,$(LZMADIR)/$(OBJDIR)/%.o,$(_LZMASRC))
 # Dependency C files
-DEPC = comp.c enc.c aes.c ec-ftp.c fileops.c
+DEPC = comp.c enc.c aes.c ecftp.c fileops.c
 # Dependency object files (E.g. = obj/comp.o obj/enc.o ... )
 # {{{
 # Created by pattern substituting (for all elements in 'DEPC')
@@ -54,7 +54,7 @@ DEP = $(patsubst %.c,$(OBJDIR)/%.o,$(DEPC))
 # `compile` first because we want `make` to just compile the program, and the
 # default target is always the the first one that doesn't begin with "."
 .PHONY: compile
-compile: lzmaobj lzma obj csshareddep ftpserver ftpclient
+compile: lzmaobj lzma obj csshareddep ecftpserver ecftpclient
 
 # Build an object file for each LZMA source file in the object file
 # subdirectory of the LZMA directory (Here we don't specify a recipe and
@@ -87,11 +87,11 @@ $(OBJDIR)/enc.o: enc.c enc.h
 	$(CC) $(CFLAGS) $(DEBUG) $< -c -o $@
 
 # Create server object file
-$(OBJDIR)/ftpserver.o: ftpserver.c ec-ftp.h
+$(OBJDIR)/ecftpserver.o: ecftpserver.c ecftp.h
 	$(CC) $(CFLAGS) $(DEBUG) $< -c -o $@
 
 # Create client object file
-$(OBJDIR)/ftpclient.o: ftpclient.c ec-ftp.h
+$(OBJDIR)/ecftpclient.o: ecftpclient.c ecftp.h
 	$(CC) $(CFLAGS) $(DEBUG) $< -c -o $@
 
 # Override the implicit rule for generating an object file for a given C file
@@ -119,14 +119,14 @@ $(OBJDIR)/%.o: %.c
 # ==================================================
 
 # Link the various files to create the server executable
-ftpserver: lzma $(OBJDIR)/ftpserver.o $(DEP) | bin
-	$(CC) $(CFLAGS) $(OBJDIR)/ftpserver.o $(DEP) $(LZMAOBJ) $(LIBS) -o ftpserver
-	mv ftpserver ../bin/ftpserver/
+ecftpserver: lzma $(OBJDIR)/ecftpserver.o $(DEP) | bin
+	$(CC) $(CFLAGS) $(OBJDIR)/ecftpserver.o $(DEP) $(LZMAOBJ) $(LIBS) -o ecftpserver
+	mv ecftpserver ../bin/ecftpserver/
 
 # Link the various files to create the client executable
-ftpclient: lzma $(OBJDIR)/ftpclient.o $(DEP) | bin
-	$(CC) $(CFLAGS) $(OBJDIR)/ftpclient.o $(DEP) $(LZMAOBJ) $(LIBS) -o ftpclient
-	mv ftpclient ../bin/ftpclient/
+ecftpclient: lzma $(OBJDIR)/ecftpclient.o $(DEP) | bin
+	$(CC) $(CFLAGS) $(OBJDIR)/ecftpclient.o $(DEP) $(LZMAOBJ) $(LIBS) -o ecftpclient
+	mv ecftpclient ../bin/ecftpclient/
 
 # ==================================================
 # Directory creation and cleaning rules
@@ -143,8 +143,8 @@ lzmaobj:
 .PHONY: bin
 bin:
 	mkdir -p ../bin
-	mkdir -p ../bin/ftpclient/
-	mkdir -p ../bin/ftpserver/
+	mkdir -p ../bin/ecftpclient/
+	mkdir -p ../bin/ecftpserver/
 
 # rm all object files in the lzma directory, and the LZMA object file directory
 .PHONY: cleanlzma
@@ -156,13 +156,13 @@ cleanlzma:
 .PHONY: cleanobj
 cleanobj:
 	rm -f $(DEP)
-	rm -f $(OBJDIR)/ftpserver.o $(OBJDIR)/ftpclient.o
+	rm -f $(OBJDIR)/ecftpserver.o $(OBJDIR)/ecftpclient.o
 	rm -d $(OBJDIR)
 
 # rm the local client and server executables
 .PHONY: cleanexec
 cleanexec:
-	rm -f ../bin/ftpclient/ftpclient ../bin/ftpserver/ftpserver
+	rm -f ../bin/ecftpclient/ecftpclient ../bin/ecftpserver/ecftpserver
 
 .PHONY: clean
 clean: cleanlzma cleanobj cleanexec

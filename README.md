@@ -64,9 +64,9 @@ make
 make debug
 ```
 
-This will compile both the `ftpclient` and `ftpserver` binaries placing them in
-`ec-ftp/bin/ftpclient/` and
-`ec-ftp/bin/ftpserver/`, respectively.
+This will compile both the `ecftpclient` and `ecftpserver` binaries placing them in
+`ec-ftp/bin/ecftpclient/` and
+`ec-ftp/bin/ecftpserver/`, respectively.
 
 ### Running the code
 
@@ -74,32 +74,32 @@ In one terminal, start the server:
 
 ```
 cd ec-ftpGit/
-cd bin/ftpserver/
-./ftpserver <listen-port>
+cd bin/ecftpserver/
+./ecftpserver <listen-port>
 ```
 
 For example:
 
 ```
-./ftpserver 45678
+./ecftpserver 45678
 ```
 
 In another terminal, start the client:
 
 ```
 cd ec-ftpGit/
-cd bin/ftpclient/
-./ftpclient <server-ip> <server-listen-port>
+cd bin/ecftpclient/
+./ecftpclient <server-ip> <server-listen-port>
 ```
 
 For example: (make sure you run the server first)
 
 ```
-./ftpclient 127.0.0.1 45678
+./ecftpclient 127.0.0.1 45678
 ```
 
-If your `ftpclient` says its connection was denied, make sure you entered the
-same port for both your `ftpserver` and `ftpclient`. If you did, try a
+If your `ecftpclient` says its connection was denied, make sure you entered the
+same port for both your `ecftpserver` and `ecftpclient`. If you did, try a
 different port.
 
 You will interface with the server through the client, you cannot run any
@@ -154,9 +154,9 @@ project, cleaned up and documented the code base, rewrote the Makefile, wrote
 the wiki, and wrote the multithreading code for compression, decompressiong,
 encryption, and decryption. Most of the compression work can be found in
 `comp.c`, as well as the compression-related changes made in `do_put()`,
-`do_get()` of `src/ftpclient.c` and in `do_retr()`, `do_stor()` of
-`src/ftpserver.c`, but other related work can be found in
-`process_received_file()`, `prepare_file()` in `ec-ftp.c`. Multithreading work
+`do_get()` of `src/ecftpclient.c` and in `do_retr()`, `do_stor()` of
+`src/ecftpserver.c`, but other related work can be found in
+`process_received_file()`, `prepare_file()` in `ecftp.c`. Multithreading work
 can be found in `compress_chunk_of_file()`, `uncompress_chunk_of_file()`,
 `comp_file()` and `uncomp_file()` in `comp.c`, as well as in
 `encrypt_chunk_of_file()`, `enc_file()`, `decrypt_chunk_of_file()`, and
@@ -254,8 +254,8 @@ aes.c
 aes.h
 comp.c
 comp.h
-ec-ftp.c
-ec-ftp.h
+ecftp.c
+ecftp.h
 enc.c
 enc.h
 ```
@@ -263,8 +263,8 @@ enc.h
 And made important modifications to the remaining files:
 
 ```
-ftpclient.c
-ftpserver.c
+ecftpclient.c
+ecftpserver.c
 ```
 
 ### 5. Julian Speedie, continuing work on this project
@@ -283,14 +283,14 @@ to enable multithreaded compression, decompression, encryption and decryption,
 as well as doing lots of work in...
 
 ```
-ec-ftp.c
-ec-ftp.h
+ecftp.c
+ecftp.h
 ```
 
 to maximize code readaility and reuseability. Similar work to document and
 increase readability of the code was done in...
 
 ```
-ftpclient.c
-ftpserver.c
+ecftpclient.c
+ecftpserver.c
 ```

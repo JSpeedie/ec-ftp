@@ -15,7 +15,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#include "ec-ftp.h"
+#include "ecftp.h"
 
 
 int get_user_input(char * buffer){
@@ -609,7 +609,7 @@ int main(int argc, char **argv) {
 
 	if (argc != 3) {
 		printf("Invalid Number of Arguments...\n");
-		printf("Usage: ./ftpclient <server-ip> <server-listen-port>\n");
+		printf("Usage: ./ecftpclient <server-ip> <server-listen-port>\n");
 		exit(-1);
 	}
 

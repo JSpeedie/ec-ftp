@@ -17,7 +17,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#include "ec-ftp.h"
+#include "ecftp.h"
 
 
 int read_port_command(char *str, char *client_ip, uint16_t *client_port) {
@@ -47,7 +47,7 @@ int read_port_command(char *str, char *client_ip, uint16_t *client_port) {
 
 
 int setup_data_connection(int *fd, char *client_ip, int client_port, int server_port) {
-	
+
 	struct sockaddr_in client_addr, temp_addr;
 
 	if ( ( (*fd) = socket(AF_INET, SOCK_STREAM, 0)) < 0){
@@ -346,7 +346,7 @@ int main(int argc, char **argv) {
 
 	if (argc != 2) {
 		printf("Invalid Number of Arguments...\n");
-		printf("Usage: ./ftpserver <listen-port>\n");
+		printf("Usage: ./ecftpserver <listen-port>\n");
 		exit(-1);
 	}
 
