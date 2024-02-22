@@ -622,30 +622,6 @@ int dec_file(char *input_fp, char *output_fp, uint32_t key[4]) {
 				fprintf(stderr, "ERROR: Could not write data content output file\n");
 				return -1;
 			}
-			/* /1* MUTW2: If this is the thread working on the data right at the */
-			/*  * end of the input file, handle padding *1/ */
-			/* if (batch_index == num_batches - 1 && t == num_threads - 1) { */
-			/* 	// TODO: handle chunk padding? */
-			/* 	/1* If the final chunk is not already internally padded, add a */
-			/* 	 * padding chunk *1/ */
-			/* 	if (args[t].padded != 1) { */
-			/* 		uint8_t text[16]; */
-
-			/* 		for (int j = 0; j < 16; j++) { */
-			/* 			text[j] = 16; */
-			/* 		} */
-
-			/* 		decrypt(text, args[t].aes_vars->rkeys, args[t].aes_vars->sbox); */
-
-			/* 		if (1 != \ */
-			/* 			/1* Write the padding chunk *1/ */
-			/* 			fwrite(&text[0], 16, 1, out_stream)) { */
-
-			/* 			fprintf(stderr, "ERROR: Could not write data content output file\n"); */
-			/* 			return -1; */
-			/* 		} */
-			/* 	} */
-			/* } */
 
 			/* Free dynamically alloc'd buffers */
 			free(args[t].inbuf);

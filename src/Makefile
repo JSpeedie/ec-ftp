@@ -1,9 +1,9 @@
 #Makefile
 LIBS = -lpthread
 CFLAGS = -Wall
-CC = gcc -g
 D_LEVEL = 2
-# CC = gcc
+CC = gcc
+# CC = gcc -g
 
 # For more information on 'patsubst' and the possibly-difficult-to-understand
 # code going on in the array creation code below, please see the GNU Make
