@@ -6,7 +6,9 @@ This repo contains a partial C implementation of FTP (as specified in [RFC
 959](https://www.ietf.org/rfc/rfc959.txt)) extended such that transferred data
 is both compressed and encrypted.
 
-![Imgur](https://imgur.com/oyjYZ36.gif)
+<p align="center">
+  <img src="https://raw.githubusercontent.com/wiki/JSpeedie/ec-ftp/images/ec-ftp-demo.gif" width="80%"/>
+</p>
 
 
 ## Purpose
