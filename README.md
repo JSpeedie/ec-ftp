@@ -7,7 +7,7 @@ This repo contains a partial C implementation of FTP (as specified in [RFC
 is both compressed and encrypted.
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/wiki/JSpeedie/ec-ftp/images/ec-ftp-demo.gif" width="80%"/>
+  <img src="https://raw.githubusercontent.com/wiki/JSpeedie/ec-ftp/images/ec-ftp-demo.gif" width="100%"/>
 </p>
 
 
