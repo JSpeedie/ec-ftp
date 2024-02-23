@@ -27,7 +27,7 @@ faced by routers, switches, and other network elements.
       decrypting a file, the program performing the process will break into
       threads in order to finish the task faster.
 * Network communication
-    * This repo contains both a server and client which communicate over
+    * This repo contains a server and client which communicate over
       both a data and control connection.
 * Efficient and well-featured Makefile
     * More than compiling in an organized way (such as placing objects files in
@@ -175,33 +175,6 @@ using ECB mode. `enc.c` includes methods for encrypting and decrypting files
 using the aes code, as well as an implementation of the square and multiply
 algorithm for calculating the power of large values mod n.
 
-When performing the STOR or RETR operations, the client and server first
-intialize a key exchange using the Diffie-Hellman algorithm. This takes place
-in 4 stages, each stage exchanging a random 32-bit integer, resulting in four
-32-bit integers which are passed into the encryption and decryption functions
-as a key. A unique key is generated for every file exchange. This is done using
-a hard-coded prime 2^32 - 99, and a hard-coded generator 5.
-
-Once the keys are exchanged, and after the file is compressed, the sender
-encrypts the file using the previously mentioned code and saves it into a temp
-file. The temp file is transmitted to the receiver, then deleted. On the
-receiving end, the entire transmission is saved into a temp file, decrypted
-into a second temp file, then decompressed to produce the final result. Temp
-files were used to avoid concerns with reading from sockets - namely, since it
-is not guarenteed that the amount of data read is equal to the amount of data
-sent, if the data was encrypted during sending, then decrypted on arrival,
-there is no guarentee that the received data would be a multiple of the block
-size. Attempting to decrypt this would result in undefined behaviour for the
-last block, and leave artifacts throughout the file.
-
-To ensure the transmitted file is not a multiple of the block size (16 bytes),
-the end of the file is buffered with up to 16 bytes, where the data is equal to
-the number of buffer bytes (i.e. if a file were 19 bytes, a 13 byte buffer
-would be used where each byte has value 13). If the file is already a multiple
-of the block size, it is buffered with 16 bytes regardless. This means the
-receiver can remove the padded data simply by removing a number of characters
-equal to the value of the last byte of data.
-
 DISCLAIMER: Since this is a minimal implementation, it carries many security
 concerns. First, Electronic Code Book (ECB) mode encrypts each 16 byte block
 independently of the others, using the same key. This means patterns in the
@@ -289,7 +262,7 @@ ecftp.c
 ecftp.h
 ```
 
-to maximize code readaility and reuseability. Similar work to document and
+to maximize code readability and reuseability. Similar work to document and
 increase readability of the code was done in...
 
 ```
