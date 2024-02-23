@@ -275,10 +275,8 @@ int do_ls(int controlfd, int datafd, char *input){
 
         if(FD_ISSET(controlfd, &rdset)){
             read(controlfd, recvline, MAXLINE);
-            //strtok(recvline, " ");
-            //recvline = strtok(NULL, " ");
 			// TODO: I think this always prints the like, http code e.g. "200 Command OK"
-            printf("%s\n", recvline);
+			printf("Server Response: %s\n", recvline);
             temp = strtok(recvline, " ");
             if(atoi(temp) != 200){
                 printf("Exiting...\n");
@@ -380,6 +378,13 @@ int do_get(int controlfd, int datafd, char *input) {
 	}
 	fclose(recv_file_stream);
 	printf("File received\n"); // TODO: remove
+
+	/* Read server response - did the server successfully send the file? */
+	char serv_resp[1024];
+	bzero(serv_resp, (int)sizeof(serv_resp));
+	// TODO: check for errors on read?
+	read(controlfd, serv_resp, 1024);
+	printf("Server Response: %s\n", serv_resp);
 
 	/* If there was an error receiving the file, delete the temp file it was to
 	 * be written to */

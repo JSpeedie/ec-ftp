@@ -162,7 +162,6 @@ int do_list(int controlfd, int datafd, char *input){
 
 	while (fgets(sendline, MAXLINE, in) != NULL) {
 		write(datafd, sendline, strlen(sendline));
-		printf("%s", sendline);
 		bzero(sendline, (int)sizeof(sendline));
 	}
 
@@ -251,7 +250,7 @@ int do_retr(int controlfd, int datafd, char *input) {
 		return -1;
 	}
 
-	/* Send success message to server */
+	/* Send success message to client */
 	sprintf(sendline, "200 Command OK");
 	write(controlfd, sendline, strlen(sendline));
 
@@ -392,11 +391,11 @@ int main(int argc, char **argv) {
 
 				// TODO: not sure this prints the right address/port
 				fprintf(stderr, "(%d) ******************************\n" \
-								"(%d) STATUS: Received a new client %s:%d!\n", \
+								"(%d) STATUS: Received a new client %s:%d!\n" \
+								"(%d) ------------------------------\n",
 								getpid(), getpid(), \
 								inet_ntoa(address.sin_addr), \
-								ntohs(address.sin_port));
-				fprintf(stderr, "(%d) ------------------------------\n", getpid());
+								ntohs(address.sin_port), getpid());
 
 				int datafd, cmd, x = 0;
 				uint16_t client_port = 0;
@@ -419,7 +418,6 @@ int main(int argc, char **argv) {
 					/* ... but they could send a QUIT command first so check
 					 * for that. */
 					if (strncmp(recvline, "QUIT", 4) == 0) {
-						printf("(%d) Quitting...\n", getpid());
 						char msg[32];
 						sprintf(msg,"221 Goodbye");
 						write(client_fd, msg, strlen(msg));
@@ -490,10 +488,11 @@ int main(int argc, char **argv) {
 				}
 				close(client_fd);
 
-				fprintf(stderr, "(%d) Finished with client_ip: %s client_port: %d.\n" \
+				fprintf(stderr, "(%d) ------------------------------\n" \
+								"(%d) STATUS: Finished with client: %s:%d.\n" \
 								"(%d) ******************************\n", \
-								getpid(), client_ip, client_port, getpid());
-
+								getpid(), getpid(), inet_ntoa(address.sin_addr), \
+								ntohs(address.sin_port), getpid());
 				exit(0);
 			}
 			//end child process-------------------------------------------------------------

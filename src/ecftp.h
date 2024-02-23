@@ -4,8 +4,8 @@
 #include <arpa/inet.h>
 #include <stdint.h>
 
-#define KEEP_TEMP_ENC_FILES 1
-#define KEEP_TEMP_COMP_FILES 1
+#define KEEP_TEMP_ENC_FILES 0
+#define KEEP_TEMP_COMP_FILES 0
 #define MAXLINE 4096
 #define LISTENQ 1024
 #define NDATAFD 4
