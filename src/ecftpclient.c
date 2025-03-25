@@ -244,7 +244,7 @@ int do_ls(int controlfd, int datafd, char *input){
     bzero(str, (int)sizeof(str));
 
     fd_set rdset;
-    int maxfdp1, data_finished = FALSE, control_finished = FALSE;
+    int maxfd, data_finished = FALSE, control_finished = FALSE;
 
     if(get_filename(input, filelist) < 0){
 #if DEBUG_LEVEL >= 1
@@ -262,16 +262,17 @@ int do_ls(int controlfd, int datafd, char *input){
     FD_SET(datafd, &rdset);
 
     if(controlfd > datafd){
-        maxfdp1 = controlfd + 1;
+        maxfd = controlfd + 1;
     }else{
-        maxfdp1 = datafd + 1;
+        maxfd = datafd + 1;
     }
 
     write(controlfd, str, strlen(str));
+
     while(1){
         if(control_finished == FALSE){FD_SET(controlfd, &rdset);}
         if(data_finished == FALSE){FD_SET(datafd, &rdset);}
-        select(maxfdp1, &rdset, NULL, NULL, NULL);
+        select(maxfd, &rdset, NULL, NULL, NULL);
 
         if(FD_ISSET(controlfd, &rdset)){
             read(controlfd, recvline, MAXLINE);
@@ -299,6 +300,7 @@ int do_ls(int controlfd, int datafd, char *input){
             data_finished = TRUE;
             FD_CLR(datafd, &rdset);
         }
+
         if((control_finished == TRUE) && (data_finished == TRUE)){
             break;
         }
@@ -427,7 +429,7 @@ int do_put(int controlfd, int datafd, char *input) {
 	bzero(str, (int)sizeof(str));
 
 	fd_set wrset, rdset;
-	int maxfdp1;
+	int maxfd;
 	int data_finished = FALSE;
 	int control_finished = FALSE;
 
@@ -446,16 +448,19 @@ int do_put(int controlfd, int datafd, char *input) {
 	sprintf(serv_cmd, "STOR %s", filename);
 	write(controlfd, serv_cmd, strlen(serv_cmd));
 
+	/* select() initialization */
 	FD_ZERO(&wrset);
+	FD_SET(datafd, &wrset);
 	FD_ZERO(&rdset);
 	FD_SET(controlfd, &rdset);
-	FD_SET(datafd, &wrset);
+	fd_set wrset_stable = wrset; // Make a backup of each set since
+	fd_set rdset_stable = rdset; // select() is destructive
 
 	/* Get the max file descripter number for select() */
 	if(controlfd > datafd){
-		maxfdp1 = controlfd + 1;
+		maxfd = controlfd + 1;
 	}else{
-		maxfdp1 = datafd + 1;
+		maxfd = datafd + 1;
 	}
 
 	/* CSCD58 addition - Encryption */
@@ -489,14 +494,11 @@ int do_put(int controlfd, int datafd, char *input) {
 	}
 
 	while (1) {
-		if (control_finished == FALSE) {
-			FD_SET(controlfd, &rdset);
-		}
-		if (data_finished == FALSE) {
-			FD_SET(datafd, &wrset);
-		}
+		/* Recreate the FD sets */
+		wrset = wrset_stable;
+		rdset = rdset_stable;
 
-		select(maxfdp1, &rdset, &wrset, NULL, NULL);
+		select(maxfd, &rdset, &wrset, NULL, NULL);
 
 		if (FD_ISSET(controlfd, &rdset)) {
 			bzero(recvline, (int)sizeof(recvline));
